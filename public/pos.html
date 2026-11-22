@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GleanGrid: counter sale</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .page-head { padding: 44px 0 20px; }
+    .page-head h1 {
+      font-family: var(--head);
+      font-size: clamp(2rem, 4.5vw, 3rem);
+      line-height: 1.05;
+      letter-spacing: -1px;
+      margin-bottom: 8px;
+    }
+    .page-head p { color: var(--muted); max-width: 55ch; }
+    .note { margin: 6px 0 16px; font-weight: 500; min-height: 1.5em; }
+    .note.error { color: var(--chilli); }
+    .note.ok { color: var(--leaf); }
+    .pos { display: grid; grid-template-columns: 1.7fr 1fr; gap: 32px; align-items: start; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+    .tile {
+      font: inherit;
+      text-align: left;
+      background: #fff;
+      color: var(--ink);
+      border: 2px solid var(--ink);
+      border-radius: 3px;
+      padding: 14px;
+      min-height: 112px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      cursor: pointer;
+    }
+    .tile:hover:not(:disabled) { background: var(--track); }
+    .tile:disabled { opacity: 0.45; cursor: not-allowed; }
+    .tile .tname { font-family: var(--head); font-weight: 700; font-size: 1.15rem; line-height: 1.2; }
+    .tile .tprice { font-weight: 600; }
+    .tile .tleft { margin-top: auto; font-size: 0.85rem; color: var(--muted); }
+    .tile .tleft.low { color: var(--chilli); font-weight: 600; }
+    .receipt {
+      border: 2px solid var(--ink);
+      background: #fff;
+      padding: 20px;
+      position: sticky;
+      top: 16px;
+    }
+    .receipt h2 { font-family: var(--head); font-size: 1.4rem; letter-spacing: -0.5px; margin-bottom: 6px; }
+    .line {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 6px 12px;
+      padding: 12px 0;
+      border-top: 1px dashed var(--line);
+    }
+    .line .lname { font-weight: 600; }
+    .line .lsum { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+    .stepper { display: flex; align-items: center; gap: 6px; }
+    .stepper button {
+      font: inherit;
+      font-weight: 700;
+      width: 30px;
+      height: 30px;
+      border: 2px solid var(--ink);
+      background: transparent;
+      color: var(--ink);
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    .stepper .qty { min-width: 56px; text-align: center; font-variant-numeric: tabular-nums; }
+    .stepper .remove { width: auto; padding: 0 10px; margin-left: 6px; border-color: var(--chilli); color: var(--chilli); font-weight: 500; font-size: 0.85rem; }
+    .receipt .empty { padding: 18px 0; }
+    .total {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      border-top: 2px solid var(--ink);
+      margin-top: 10px;
+      padding-top: 14px;
+      font-family: var(--head);
+      font-weight: 700;
+      font-size: 1.7rem;
+    }
+    .receipt .btn { width: 100%; margin-top: 16px; justify-self: auto; }
+    .receipt .clear { margin-top: 8px; background: transparent; color: var(--ink); }
+    @media (max-width: 900px) {
+      .pos { grid-template-columns: 1fr; }
+      .receipt { position: static; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/">GleanGrid</a>
+    <nav>
+      <a href="/">Marketplace</a>
+      <a href="/sell.html">Orders</a>
+      <a href="/inventory.html">My products</a>
+      <a href="/pos.html" aria-current="page">Counter sale</a>
+      <a href="/login.html" class="login">Log in</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="page-head">
+      <h1>Counter sale</h1>
+      <p>Tap a product to add 1 kg to the receipt. Only stock that is not reserved for online orders can be sold here.</p>
+    </section>
+
+    <p class="note" id="note" role="status"></p>
+
+    <div class="pos">
+      <section class="grid" id="grid" aria-live="polite"></section>
+
+      <aside class="receipt">
+        <h2>Receipt</h2>
+        <div id="lines"></div>
+        <div class="total"><span>Total</span><span id="total">Rs 0</span></div>
+        <button class="btn" id="pay" disabled>Complete sale</button>
+        <button class="btn clear" id="clear" disabled>Clear receipt</button>
+      </aside>
+    </div>
+  </main>
+
+  <script>
+    const grid = document.getElementById('grid');
+    const linesEl = document.getElementById('lines');
+    const totalEl = document.getElementById('total');
+    const payBtn = document.getElementById('pay');
+    const clearBtn = document.getElementById('clear');
+    const note = document.getElementById('note');
+
+    let products = [];
+    let cart = new Map();
+
+    function esc(text) {
+      const d = document.createElement('div');
+      d.textContent = text;
+      return d.innerHTML;
+    }
+
+    function money(n) {
+      return 'Rs ' + Number(n).toLocaleString('en-PK');
+    }
+
+    function showNote(text, type) {
+      note.textContent = text;
+      note.className = 'note ' + type;
+    }
+
+    function availableOf(p) {
+      return p.on_hand - p.reserved;
+    }
+
+    function clampCart() {
+      for (const [id, qty] of cart) {
+        const p = products.find(x => x.id === id);
+        const max = p ? availableOf(p) : 0;
+        if (max <= 0) cart.delete(id);
+        else if (qty > max) cart.set(id, max);
+      }
+    }
+
+    function renderGrid() {
+      if (!products.length) {
+        grid.innerHTML = '<p class="empty">You have no products yet. Add some on the My products page.</p>';
+        return;
+      }
+      grid.innerHTML = products.map(p => {
+        const left = availableOf(p) - (cart.get(p.id) || 0);
+        const low = left > 0 && left <= 20;
+        return `
+          <button class="tile" data-id="${p.id}" ${left <= 0 ? 'disabled' : ''}>
+            <span class="tname">${esc(p.name)}</span>
+            <span class="tprice">${money(p.unit_price)} per kg</span>
+            <span class="tleft ${low ? 'low' : ''}">${left <= 0 ? 'None left' : left + ' kg left'}</span>
+          </button>`;
+      }).join('');
+    }
+
+    function renderCart() {
+      let total = 0;
+      let html = '';
+      for (const [id, qty] of cart) {
+        const p = products.find(x => x.id === id);
+        if (!p) continue;
+        const sum = qty * p.unit_price;
+        total += sum;
+        html += `
+          <div class="line">
+            <span class="lname">${esc(p.name)}</span>
+            <span class="lsum">${money(sum)}</span>
+            <div class="stepper">
+              <button data-act="dec" data-id="${id}" aria-label="One less ${esc(p.name)}">-</button>
+              <span class="qty">${qty} kg</span>
+              <button data-act="inc" data-id="${id}" aria-label="One more ${esc(p.name)}">+</button>
+              <button class="remove" data-act="rm" data-id="${id}">Remove</button>
+            </div>
+          </div>`;
+      }
+      linesEl.innerHTML = html || '<p class="empty">No items yet. Tap a product to add it.</p>';
+      totalEl.textContent = money(total);
+      payBtn.disabled = cart.size === 0;
+      clearBtn.disabled = cart.size === 0;
+    }
+
+    function render() {
+      clampCart();
+      renderGrid();
+      renderCart();
+    }
+
+    async function loadProducts() {
+      try {
+        const res = await fetch('/api/inventory');
+        if (res.status === 401 || res.status === 403) {
+          grid.innerHTML = '<p class="empty">Log in with a seller account to use the counter. <a href="/login.html">Go to log in</a></p>';
+          return;
+        }
+        products = await res.json();
+        render();
+      } catch (err) {
+        grid.innerHTML = '<p class="empty">Could not load products. Check that the server is running, then refresh.</p>';
+      }
+    }
+
+    grid.addEventListener('click', (e) => {
+      const tile = e.target.closest('.tile');
+      if (!tile) return;
+      const id = Number(tile.dataset.id);
+      const p = products.find(x => x.id === id);
+      const current = cart.get(id) || 0;
+      if (p && current < availableOf(p)) {
+        cart.set(id, current + 1);
+        showNote('', '');
+        render();
+      }
+    });
+
+    linesEl.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-act]');
+      if (!btn) return;
+      const id = Number(btn.dataset.id);
+      const current = cart.get(id) || 0;
+      const p = products.find(x => x.id === id);
+      if (btn.dataset.act === 'inc' && p && current < availableOf(p)) cart.set(id, current + 1);
+      if (btn.dataset.act === 'dec') {
+        if (current <= 1) cart.delete(id);
+        else cart.set(id, current - 1);
+      }
+      if (btn.dataset.act === 'rm') cart.delete(id);
+      render();
+    });
+
+    clearBtn.addEventListener('click', () => {
+      cart.clear();
+      render();
+    });
+
+    payBtn.addEventListener('click', async () => {
+      payBtn.disabled = true;
+      const items = [...cart.entries()].map(([product_id, qty]) => ({ product_id, qty }));
+      try {
+        const res = await fetch('/api/pos/sales', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          cart.clear();
+          showNote('Sale #' + data.sale_id + ' recorded. Total ' + money(data.total) + '.', 'ok');
+        } else {
+          showNote(data.error, 'error');
+        }
+      } catch (err) {
+        showNote('Could not reach the server. Please try again.', 'error');
+      }
+      await loadProducts();
+    });
+
+    loadProducts();
+  </script>
+  <script src="js/nav.js"></script>
+</body>
+</html>

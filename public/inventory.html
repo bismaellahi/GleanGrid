@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GleanGrid: my products</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .page-head { padding: 44px 0 20px; }
+    .page-head h1 {
+      font-family: var(--head);
+      font-size: clamp(2rem, 4.5vw, 3rem);
+      line-height: 1.05;
+      letter-spacing: -1px;
+      margin-bottom: 8px;
+    }
+    .page-head p { color: var(--muted); max-width: 55ch; }
+    .add-form {
+      display: grid;
+      grid-template-columns: 1.6fr 1.2fr 0.8fr 0.8fr 1fr auto;
+      gap: 14px;
+      align-items: end;
+      padding: 20px 0 26px;
+      border-top: 2px solid var(--ink);
+    }
+    .add-form label { display: block; font-weight: 500; font-size: 0.9rem; margin-bottom: 5px; }
+    .add-form input, .add-form select {
+      font: inherit;
+      width: 100%;
+      padding: 10px 12px;
+      border: 2px solid var(--ink);
+      background: #fff;
+      border-radius: 3px;
+    }
+    .add-form .btn { justify-self: auto; }
+    .note { margin: 6px 0 14px; font-weight: 500; min-height: 1.5em; }
+    .note.error { color: var(--chilli); }
+    .note.ok { color: var(--leaf); }
+    .stock-list { border-bottom: 2px solid var(--ink); }
+    .item {
+      display: grid;
+      grid-template-columns: 1.6fr 0.8fr 1.6fr 1.5fr;
+      gap: 20px;
+      align-items: center;
+      padding: 16px 0;
+      border-top: 1px solid var(--line);
+    }
+    .item:first-child { border-top: 2px solid var(--ink); }
+    .item .pname { font-family: var(--head); font-weight: 700; font-size: 1.2rem; line-height: 1.2; }
+    .item .meta { color: var(--muted); font-size: 0.9rem; }
+    .numbers { display: flex; gap: 18px; }
+    .numbers div { font-size: 0.8rem; color: var(--muted); }
+    .numbers strong { display: block; font-family: var(--head); font-size: 1.25rem; color: var(--ink); }
+    .restock { display: flex; gap: 8px; }
+    .restock input {
+      font: inherit;
+      width: 90px;
+      padding: 8px 10px;
+      border: 2px solid var(--ink);
+      background: #fff;
+      border-radius: 3px;
+    }
+    .restock .btn { padding: 8px 14px; justify-self: auto; }
+    @media (max-width: 900px) {
+      .add-form { grid-template-columns: 1fr 1fr; }
+      .item { grid-template-columns: 1fr 1fr; gap: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/">GleanGrid</a>
+    <nav>
+      <a href="/">Marketplace</a>
+      <a href="/sell.html">Orders</a>
+      <a href="/inventory.html" aria-current="page">My products</a>
+      <a href="/login.html" class="login">Log in</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="page-head">
+      <h1>Your products and stock</h1>
+      <p>Add a new product, or add stock when a fresh harvest arrives. Every change is recorded in the stock history.</p>
+    </section>
+
+    <form class="add-form" id="add-form">
+      <div>
+        <label for="f-name">Product name</label>
+        <input id="f-name" type="text" required>
+      </div>
+      <div>
+        <label for="f-category">Category</label>
+        <select id="f-category" required></select>
+      </div>
+      <div>
+        <label for="f-price">Price per kg (Rs)</label>
+        <input id="f-price" type="number" min="1" step="0.01" required>
+      </div>
+      <div>
+        <label for="f-qty">Stock (kg)</label>
+        <input id="f-qty" type="number" min="0" step="1" value="0" required>
+      </div>
+      <div>
+        <label for="f-date">Ready on (optional)</label>
+        <input id="f-date" type="date">
+      </div>
+      <button class="btn" type="submit">Add product</button>
+    </form>
+
+    <p class="note" id="note" role="status"></p>
+    <section class="stock-list" id="list" aria-live="polite"></section>
+  </main>
+
+  <script>
+    const list = document.getElementById('list');
+    const note = document.getElementById('note');
+    const addForm = document.getElementById('add-form');
+    const categorySelect = document.getElementById('f-category');
+
+    function esc(text) {
+      const d = document.createElement('div');
+      d.textContent = text;
+      return d.innerHTML;
+    }
+
+    function showNote(text, type) {
+      note.textContent = text;
+      note.className = 'note ' + type;
+    }
+
+    function itemHTML(p) {
+      const available = p.on_hand - p.reserved;
+      return `
+        <article class="item">
+          <div>
+            <div class="pname">${esc(p.name)}</div>
+            <div class="meta">${esc(p.category)}</div>
+          </div>
+          <div><strong>Rs ${p.unit_price}</strong><div class="meta">per kg</div></div>
+          <div class="numbers">
+            <div><strong>${p.on_hand}</strong>On hand</div>
+            <div><strong>${p.reserved}</strong>Reserved</div>
+            <div><strong>${available}</strong>Available</div>
+          </div>
+          <div class="restock">
+            <input type="number" min="1" step="1" placeholder="kg" aria-label="Kilograms to add to ${esc(p.name)}">
+            <button class="btn" data-id="${p.id}">Add stock</button>
+          </div>
+        </article>`;
+    }
+
+    async function loadCategories() {
+      const res = await fetch('/api/inventory/categories');
+      if (!res.ok) return false;
+      const cats = await res.json();
+      categorySelect.innerHTML = cats.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+      return true;
+    }
+
+    async function loadProducts() {
+      const res = await fetch('/api/inventory');
+      const items = await res.json();
+      list.innerHTML = items.length
+        ? items.map(itemHTML).join('')
+        : '<p class="empty">You have no products yet. Add your first one above.</p>';
+    }
+
+    async function start() {
+      try {
+        const ok = await loadCategories();
+        if (!ok) {
+          addForm.style.display = 'none';
+          list.innerHTML = '<p class="empty">Log in with a seller account to manage your products. <a href="/login.html">Go to log in</a></p>';
+          return;
+        }
+        await loadProducts();
+      } catch (err) {
+        list.innerHTML = '<p class="empty">Could not load your products. Check that the server is running, then refresh.</p>';
+      }
+    }
+
+    addForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        const res = await fetch('/api/inventory', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: document.getElementById('f-name').value,
+            category_id: categorySelect.value,
+            unit_price: document.getElementById('f-price').value,
+            qty: document.getElementById('f-qty').value,
+            ready_on: document.getElementById('f-date').value
+          })
+        });
+        const data = await res.json();
+        showNote(data.message || data.error, res.ok ? 'ok' : 'error');
+        if (res.ok) {
+          addForm.reset();
+          document.getElementById('f-qty').value = 0;
+          loadProducts();
+        }
+      } catch (err) {
+        showNote('Could not reach the server. Please try again.', 'error');
+      }
+    });
+
+    list.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-id]');
+      if (!btn) return;
+      const input = btn.parentElement.querySelector('input');
+      try {
+        const res = await fetch('/api/inventory/' + btn.dataset.id + '/restock', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ qty: input.value })
+        });
+        const data = await res.json();
+        showNote(data.message || data.error, res.ok ? 'ok' : 'error');
+        if (res.ok) loadProducts();
+      } catch (err) {
+        showNote('Could not reach the server. Please try again.', 'error');
+      }
+    });
+
+    start();
+  </script>
+  <script src="js/nav.js"></script>
+</body>
+</html>

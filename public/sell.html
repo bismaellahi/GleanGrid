@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GleanGrid: seller orders</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .page-head { padding: 44px 0 20px; }
+    .page-head h1 {
+      font-family: var(--head);
+      font-size: clamp(2rem, 4.5vw, 3rem);
+      line-height: 1.05;
+      letter-spacing: -1px;
+      margin-bottom: 8px;
+    }
+    .page-head p { color: var(--muted); max-width: 55ch; }
+    .orders { border-bottom: 2px solid var(--ink); }
+    .order {
+      display: grid;
+      grid-template-columns: 0.4fr 1.6fr 1fr 0.9fr 1.7fr;
+      gap: 20px;
+      align-items: center;
+      padding: 18px 0;
+      border-top: 1px solid var(--line);
+    }
+    .order:first-child { border-top: 2px solid var(--ink); }
+    .order .id { font-family: var(--head); font-weight: 700; font-size: 1.2rem; }
+    .order .product { font-family: var(--head); font-weight: 700; font-size: 1.15rem; line-height: 1.2; }
+    .order .meta { color: var(--muted); font-size: 0.9rem; }
+    .status {
+      display: inline-block;
+      padding: 3px 10px;
+      border: 1.5px solid var(--ink);
+      border-radius: 3px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      text-transform: capitalize;
+    }
+    .status.pending { background: var(--mango); }
+    .status.confirmed, .status.packed, .status.dispatched { background: var(--track); }
+    .status.collected { background: var(--leaf); color: #fff; border-color: var(--leaf); }
+    .status.rejected, .status.cancelled, .status.returned { color: var(--chilli); border-color: var(--chilli); }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .actions .btn { padding: 7px 12px; font-size: 0.9rem; justify-self: auto; }
+    .btn.reject { background: transparent; color: var(--chilli); border-color: var(--chilli); }
+    .note { margin: 14px 0; font-weight: 500; min-height: 1.5em; }
+    .note.error { color: var(--chilli); }
+    .note.ok { color: var(--leaf); }
+    @media (max-width: 760px) {
+      .order { grid-template-columns: 1fr 1fr; gap: 12px; }
+      .order .actions { grid-column: 1 / -1; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/">GleanGrid</a>
+    <nav>
+      <a href="/">Marketplace</a>
+      <a href="/sell.html" aria-current="page">Orders</a>
+      <a href="/login.html" class="login">Log in</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="page-head">
+      <h1>Orders for your produce</h1>
+      <p>Confirm, pack and dispatch each order. Stock updates by itself at every step.</p>
+    </section>
+
+    <p class="note" id="note" role="status"></p>
+    <section class="orders" id="orders" aria-live="polite"></section>
+  </main>
+
+  <script>
+    const list = document.getElementById('orders');
+    const note = document.getElementById('note');
+
+    const actionsByStatus = {
+      pending: [['confirmed', 'Confirm'], ['rejected', 'Reject']],
+      confirmed: [['packed', 'Mark packed'], ['rejected', 'Reject']],
+      packed: [['dispatched', 'Dispatch'], ['collected', 'Mark collected'], ['rejected', 'Reject']],
+            dispatched: [['collected', 'Mark collected']],
+      collected: [['returned', 'Mark returned']]
+    };
+
+    function esc(text) {
+      const d = document.createElement('div');
+      d.textContent = text;
+      return d.innerHTML;
+    }
+
+    function showNote(text, type) {
+      note.textContent = text;
+      note.className = 'note ' + type;
+    }
+
+    function orderHTML(o) {
+      const buttons = (actionsByStatus[o.status] || []).map(([status, label]) =>
+        `<button class="btn ${status === 'rejected' ? 'reject' : ''}" data-id="${o.id}" data-status="${status}">${label}</button>`
+      ).join('');
+      const date = new Date(o.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+      return `
+        <article class="order">
+          <div class="id">#${o.id}</div>
+          <div>
+            <div class="product">${esc(o.product)}</div>
+            <div class="meta">${o.qty} kg for ${esc(o.buyer)}</div>
+          </div>
+          <div>
+            <strong>Rs ${Number(o.total_amount).toLocaleString('en-PK')}</strong>
+            <div class="meta">${date}</div>
+          </div>
+          <div><span class="status ${o.status}">${o.status}</span></div>
+          <div class="actions">${buttons}</div>
+        </article>`;
+    }
+
+    async function loadOrders() {
+      try {
+        const res = await fetch('/api/seller/orders');
+        if (res.status === 401 || res.status === 403) {
+          list.innerHTML = '<p class="empty">Log in with a seller account to see your orders. <a href="/login.html">Go to log in</a></p>';
+          return;
+        }
+        const orders = await res.json();
+        list.innerHTML = orders.length
+          ? orders.map(orderHTML).join('')
+          : '<p class="empty">No orders for your produce yet.</p>';
+      } catch (err) {
+        list.innerHTML = '<p class="empty">Could not load orders. Check that the server is running, then refresh.</p>';
+      }
+    }
+
+    list.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-id]');
+      if (!btn) return;
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/seller/orders/' + btn.dataset.id + '/status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: btn.dataset.status })
+        });
+        const data = await res.json();
+        showNote(data.message || data.error, res.ok ? 'ok' : 'error');
+      } catch (err) {
+        showNote('Could not reach the server. Please try again.', 'error');
+      }
+      loadOrders();
+    });
+
+    loadOrders();
+  </script>
+  <script src="js/nav.js"></script>
+</body>
+</html>

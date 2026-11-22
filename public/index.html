@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GleanGrid: produce marketplace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/">GleanGrid</a>
+    <nav>
+      <a href="/" aria-current="page">Marketplace</a>
+      <a href="/sell.html">Sell produce</a>
+      <a href="/login.html" class="login">Log in</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="intro">
+      <h1>What's in stock today</h1>
+      <p>Prices are per kg. Each bar shows how much is free to order and how much is already reserved.</p>
+      <p class="legend">
+        <span class="swatch free"></span> Free to order
+        <span class="swatch held"></span> Reserved
+      </p>
+    </section>
+
+    <section class="controls">
+      <label class="search">
+        <span class="sr">Search produce</span>
+        <input id="search" type="search" placeholder="Search chillies, dates, onions">
+      </label>
+      <div class="chips">
+        <button class="chip active" data-cat="all">All</button>
+        <button class="chip" data-cat="Vegetables">Vegetables</button>
+        <button class="chip" data-cat="Fruit">Fruit</button>
+        <button class="chip" data-cat="Spices">Spices</button>
+      </div>
+    </section>
+
+    <section class="board" id="board" aria-live="polite"></section>
+  </main>
+
+  <script src="js/app.js"></script>
+  <script src="js/nav.js"></script>
+</body>
+</html>

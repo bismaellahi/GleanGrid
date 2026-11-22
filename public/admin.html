@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GleanGrid: admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    .page-head { padding: 44px 0 20px; }
+    .page-head h1 {
+      font-family: var(--head);
+      font-size: clamp(2rem, 4.5vw, 3rem);
+      line-height: 1.05;
+      letter-spacing: -1px;
+      margin-bottom: 8px;
+    }
+    .page-head p { color: var(--muted); max-width: 55ch; }
+    .counts { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 2px solid var(--ink); border-bottom: 2px solid var(--ink); }
+    .counts div { padding: 18px 20px; border-left: 1px solid var(--line); }
+    .counts div:first-child { border-left: none; padding-left: 0; }
+    .counts strong { display: block; font-family: var(--head); font-size: 2.2rem; line-height: 1.1; }
+    .counts span { color: var(--muted); font-size: 0.9rem; }
+    h2.section {
+      font-family: var(--head);
+      font-size: 1.5rem;
+      letter-spacing: -0.5px;
+      margin: 36px 0 10px;
+    }
+    .table-wrap { overflow-x: auto; border-top: 2px solid var(--ink); border-bottom: 2px solid var(--ink); }
+    table { width: 100%; border-collapse: collapse; min-width: 560px; }
+    th, td { text-align: left; padding: 11px 14px 11px 0; border-top: 1px solid var(--line); font-size: 0.95rem; }
+    thead th { border-top: none; color: var(--muted); font-weight: 500; font-size: 0.85rem; }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    .status {
+      display: inline-block;
+      padding: 2px 9px;
+      border: 1.5px solid var(--ink);
+      border-radius: 3px;
+      font-weight: 600;
+      font-size: 0.82rem;
+      text-transform: capitalize;
+    }
+    .status.pending { background: var(--mango); }
+    .status.confirmed, .status.packed, .status.dispatched { background: var(--track); }
+    .status.collected { background: var(--leaf); color: #fff; border-color: var(--leaf); }
+    .status.rejected, .status.cancelled, .status.returned { color: var(--chilli); border-color: var(--chilli); }
+    .low { color: var(--chilli); font-weight: 600; }
+    @media (max-width: 760px) {
+      .counts { grid-template-columns: 1fr 1fr; }
+      .counts div:nth-child(3) { border-left: none; padding-left: 0; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/">GleanGrid</a>
+    <nav>
+      <a href="/">Marketplace</a>
+      <a href="/admin.html" aria-current="page">Admin</a>
+      <a href="/login.html" class="login">Log in</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="page-head">
+      <h1>Admin overview</h1>
+      <p>Everything on the platform in one place: users, low stock and the latest orders.</p>
+    </section>
+
+    <div id="content" aria-live="polite"></div>
+  </main>
+
+  <script>
+    const content = document.getElementById('content');
+
+    function esc(text) {
+      const d = document.createElement('div');
+      d.textContent = text;
+      return d.innerHTML;
+    }
+
+    function fmtDate(value) {
+      return new Date(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+
+    function render(data) {
+      const c = data.counts;
+      const lowRows = data.low_stock.map(p => {
+        const available = p.on_hand - p.reserved;
+        return `<tr>
+          <td>${esc(p.name)}</td>
+          <td>${esc(p.seller)}</td>
+          <td class="num">${p.on_hand}</td>
+          <td class="num">${p.reserved}</td>
+          <td class="num low">${available}</td>
+        </tr>`;
+      }).join('');
+
+      const orderRows = data.orders.map(o => `<tr>
+          <td>#${o.id}</td>
+          <td>${esc(o.product)}</td>
+          <td>${esc(o.buyer)}</td>
+          <td class="num">${o.qty} kg</td>
+          <td class="num">Rs ${Number(o.total_amount).toLocaleString('en-PK')}</td>
+          <td><span class="status ${o.status}">${o.status}</span></td>
+          <td>${fmtDate(o.created_at)}</td>
+        </tr>`).join('');
+
+      const userRows = data.users.map(u => `<tr>
+          <td>${esc(u.name)}</td>
+          <td>${esc(u.email)}</td>
+          <td style="text-transform:capitalize">${u.role}</td>
+          <td>${esc(u.place || '')}</td>
+          <td>${fmtDate(u.created_at)}</td>
+        </tr>`).join('');
+
+      content.innerHTML = `
+        <div class="counts">
+          <div><strong>${c.users}</strong><span>Users</span></div>
+          <div><strong>${c.products}</strong><span>Products</span></div>
+          <div><strong>${c.orders}</strong><span>Online orders</span></div>
+          <div><strong>${c.pos_sales}</strong><span>Counter sales</span></div>
+        </div>
+
+        <h2 class="section">Low stock (20 kg or less available)</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Product</th><th>Seller</th><th class="num">On hand</th><th class="num">Reserved</th><th class="num">Available</th></tr></thead>
+            <tbody>${lowRows || '<tr><td colspan="5">Nothing is running low.</td></tr>'}</tbody>
+          </table>
+        </div>
+
+        <h2 class="section">Latest orders</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Order</th><th>Product</th><th>Buyer</th><th class="num">Qty</th><th class="num">Total</th><th>Status</th><th>Date</th></tr></thead>
+            <tbody>${orderRows || '<tr><td colspan="7">No orders yet.</td></tr>'}</tbody>
+          </table>
+        </div>
+
+        <h2 class="section">Users</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Place</th><th>Joined</th></tr></thead>
+            <tbody>${userRows}</tbody>
+          </table>
+        </div>`;
+    }
+
+    async function load() {
+      try {
+        const res = await fetch('/api/admin/overview');
+        if (res.status === 401 || res.status === 403) {
+          content.innerHTML = '<p class="empty">Log in with the admin account to see this page. <a href="/login.html">Go to log in</a></p>';
+          return;
+        }
+        render(await res.json());
+      } catch (err) {
+        content.innerHTML = '<p class="empty">Could not load the overview. Check that the server is running, then refresh.</p>';
+      }
+    }
+
+    load();
+  </script>
+  <script src="js/nav.js"></script>
+</body>
+</html>
