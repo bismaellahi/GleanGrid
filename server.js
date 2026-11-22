@@ -1,6 +1,6 @@
 require("dotenv").config();
 const express = require("express");
-const session = require("express-session");
+const cookieSession = require("cookie-session");
 const path = require("path");
 
 const app = express();
@@ -11,14 +11,26 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use(
-  session({
-    secret: process.env.SESSION_SECRET || "gleangrid-dev-secret",
-    resave: false,
-    saveUninitialized: false,
-    cookie: { maxAge: 1000 * 60 * 60 * 8 }
+  cookieSession({
+    name: "gleangrid",
+    keys: [process.env.SESSION_SECRET || "gleangrid-dev-secret"],
+    maxAge: 1000 * 60 * 60 * 8,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production"
   })
 );
-
+app.use((req, res, next) => {
+  Object.defineProperty(req.session, "destroy", {
+    value: (cb) => {
+      req.session = null;
+      if (cb) cb();
+    },
+    enumerable: false,
+    configurable: true,
+    writable: true
+  });
+  next();
+});
 app.use(express.static(path.join(__dirname, "public")));
 
 app.use("/api/products", require("./routes/products"));
@@ -36,3 +48,5 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log("GleanGrid server running on port " + PORT);
 });
+
+module.exports = app;
