@@ -8,6 +8,71 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
+  <style>
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      align-items: end;
+      padding: 0 0 18px;
+    }
+    .filters label { display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 4px; }
+    .filters select, .filters input {
+      font: inherit;
+      padding: 8px 10px;
+      border: 2px solid var(--ink);
+      background: #fff;
+      border-radius: 3px;
+    }
+    .filters input[type="number"] { width: 100px; }
+    .filters .btn { padding: 8px 14px; justify-self: auto; background: transparent; color: var(--ink); }
+    .cmp {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      margin-top: 6px;
+      font-size: 0.85rem;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .compare-bar {
+      display: none;
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 5;
+      background: var(--ink);
+      color: var(--bg);
+      padding: 12px 6vw;
+      align-items: center;
+      gap: 14px;
+    }
+    .compare-bar.show { display: flex; }
+    .compare-bar .grow { flex: 1; font-weight: 500; }
+    .compare-bar .btn { padding: 8px 16px; justify-self: auto; }
+    .compare-bar .btn.open { background: var(--mango); color: var(--ink); border-color: var(--mango); }
+    .compare-bar .btn.clear { background: transparent; color: var(--bg); border-color: var(--bg); }
+    dialog.compare-box {
+      border: 2px solid var(--ink);
+      border-radius: 3px;
+      padding: 22px;
+      width: min(760px, 94vw);
+      background: var(--bg);
+      color: var(--ink);
+      margin: auto;
+    }
+    dialog.compare-box::backdrop { background: rgba(30, 43, 28, 0.55); }
+    .compare-box h2 { font-family: var(--head); font-size: 1.5rem; letter-spacing: -0.5px; margin-bottom: 12px; }
+    .compare-box .scroll { overflow-x: auto; }
+    .compare-box table { width: 100%; border-collapse: collapse; min-width: 420px; }
+    .compare-box th, .compare-box td { text-align: left; padding: 10px 12px 10px 0; border-top: 1px solid var(--line); }
+    .compare-box thead th { border-top: none; font-family: var(--head); font-size: 1.1rem; }
+    .compare-box tbody th { color: var(--muted); font-weight: 500; font-size: 0.9rem; }
+    .compare-box .actions { margin-top: 16px; }
+    .compare-box .actions .btn { justify-self: auto; }
+    main { padding-bottom: 90px; }
+  </style>
 </head>
 <body>
   <header class="top">
@@ -42,8 +107,46 @@
       </div>
     </section>
 
+    <section class="filters">
+      <div>
+        <label for="f-seller">Seller</label>
+        <select id="f-seller"><option value="all">All sellers</option></select>
+      </div>
+      <div>
+        <label for="f-min">Min price (Rs)</label>
+        <input id="f-min" type="number" min="0" step="1">
+      </div>
+      <div>
+        <label for="f-max">Max price (Rs)</label>
+        <input id="f-max" type="number" min="0" step="1">
+      </div>
+      <div>
+        <label for="f-avail">Availability</label>
+        <select id="f-avail">
+          <option value="all">Everything</option>
+          <option value="in">In stock now</option>
+          <option value="pre">Pre-order only</option>
+        </select>
+      </div>
+      <button class="btn" id="f-reset" type="button">Clear filters</button>
+    </section>
+
     <section class="board" id="board" aria-live="polite"></section>
   </main>
+
+  <div class="compare-bar" id="compare-bar">
+    <span class="grow"><span id="compare-count">0</span> selected to compare (pick 2 or 3)</span>
+    <button class="btn open" id="compare-open" type="button">Compare</button>
+    <button class="btn clear" id="compare-clear" type="button">Clear</button>
+  </div>
+
+  <dialog class="compare-box" id="compare-dialog">
+    <h2>Compare produce</h2>
+    <div class="scroll" id="compare-body"></div>
+    <div class="actions">
+      <button class="btn" id="compare-close" type="button">Close</button>
+    </div>
+  </dialog>
 
   <script src="js/app.js"></script>
   <script src="js/nav.js"></script>

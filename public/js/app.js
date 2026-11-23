@@ -1,26 +1,51 @@
 const board = document.getElementById('board');
 const searchBox = document.getElementById('search');
 const chips = document.querySelectorAll('.chip');
+const sellerSel = document.getElementById('f-seller');
+const minBox = document.getElementById('f-min');
+const maxBox = document.getElementById('f-max');
+const availSel = document.getElementById('f-avail');
+const resetBtn = document.getElementById('f-reset');
+const compareBar = document.getElementById('compare-bar');
+const compareCount = document.getElementById('compare-count');
+const compareOpen = document.getElementById('compare-open');
+const compareClear = document.getElementById('compare-clear');
+const compareDialog = document.getElementById('compare-dialog');
+const compareBody = document.getElementById('compare-body');
+const compareClose = document.getElementById('compare-close');
 
 let products = [];
 let activeCat = 'all';
+const compareIds = new Set();
 
 function esc(text) {
   const d = document.createElement('div');
   d.textContent = text;
-  return d.innerHTML;
+  return d.innerHTML.replace(/"/g, '&quot;');
+}
+
+function availableOf(p) {
+  return p.on_hand - p.reserved;
+}
+
+function isPreorder(p) {
+  return Boolean(p.ready_on) && new Date(p.ready_on) > new Date();
+}
+
+function fmtDate(value) {
+  return new Date(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 function rowHTML(p) {
-  const available = p.on_hand - p.reserved;
+  const available = availableOf(p);
   const freePct = p.on_hand ? (available / p.on_hand) * 100 : 0;
   const heldPct = p.on_hand ? (p.reserved / p.on_hand) * 100 : 0;
-  const isPreorder = p.ready_on && new Date(p.ready_on) > new Date();
+  const preorder = isPreorder(p);
 
-  let note, low = false;
-  if (isPreorder) {
-    const date = new Date(p.ready_on).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-    note = `Ready ${date}, ${available} kg open for pre-order`;
+  let note;
+  let low = false;
+  if (preorder) {
+    note = `Ready ${fmtDate(p.ready_on)}, ${available} kg open for pre-order`;
   } else if (available === 0) {
     note = 'Fully reserved';
     low = true;
@@ -33,7 +58,7 @@ function rowHTML(p) {
 
   let button;
   if (available === 0) button = '<button class="btn" disabled>Not available</button>';
-  else if (isPreorder) button = `<button class="btn pre" data-id="${p.id}">Pre-order</button>`;
+  else if (preorder) button = `<button class="btn pre" data-id="${p.id}">Pre-order</button>`;
   else button = `<button class="btn" data-id="${p.id}">Order</button>`;
 
   return `
@@ -41,6 +66,7 @@ function rowHTML(p) {
       <div>
         <div class="name">${esc(p.name)}</div>
         <div class="where">${esc(p.seller)}, ${esc(p.place)}</div>
+        <label class="cmp"><input type="checkbox" data-cmp="${p.id}" ${compareIds.has(p.id) ? 'checked' : ''}> Compare</label>
       </div>
       <div class="bar-col">
         <div class="crate" role="img" aria-label="${available} kg free, ${p.reserved} kg reserved">
@@ -54,15 +80,43 @@ function rowHTML(p) {
     </article>`;
 }
 
-function render() {
+function filtered() {
   const q = searchBox.value.trim().toLowerCase();
-  const list = products.filter(p =>
-    (activeCat === 'all' || p.category === activeCat) &&
-    (p.name.toLowerCase().includes(q) || p.seller.toLowerCase().includes(q))
-  );
+  const min = minBox.value === '' ? null : Number(minBox.value);
+  const max = maxBox.value === '' ? null : Number(maxBox.value);
+  return products.filter(p => {
+    const available = availableOf(p);
+    if (activeCat !== 'all' && p.category !== activeCat) return false;
+    if (q && !p.name.toLowerCase().includes(q) && !p.seller.toLowerCase().includes(q)) return false;
+    if (sellerSel.value !== 'all' && p.seller !== sellerSel.value) return false;
+    if (min !== null && p.unit_price < min) return false;
+    if (max !== null && p.unit_price > max) return false;
+    if (availSel.value === 'in' && (available <= 0 || isPreorder(p))) return false;
+    if (availSel.value === 'pre' && !isPreorder(p)) return false;
+    return true;
+  });
+}
+
+function updateCompareBar() {
+  compareCount.textContent = compareIds.size;
+  compareBar.classList.toggle('show', compareIds.size > 0);
+  compareOpen.disabled = compareIds.size < 2;
+}
+
+function render() {
+  const list = filtered();
   board.innerHTML = list.length
     ? list.map(rowHTML).join('')
-    : '<p class="empty">Nothing matches. Clear the search or pick another category.</p>';
+    : '<p class="empty">Nothing matches. Clear the filters or try another search.</p>';
+  updateCompareBar();
+}
+
+function fillSellers() {
+  const current = sellerSel.value;
+  const names = [...new Set(products.map(p => p.seller))].sort();
+  sellerSel.innerHTML = '<option value="all">All sellers</option>' +
+    names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  sellerSel.value = names.includes(current) ? current : 'all';
 }
 
 async function loadProducts() {
@@ -70,13 +124,33 @@ async function loadProducts() {
     const res = await fetch('/api/products');
     if (!res.ok) throw new Error('Server returned ' + res.status);
     products = await res.json();
+    fillSellers();
     render();
   } catch (err) {
     board.innerHTML = '<p class="empty">Could not load produce. Check that the server is running, then refresh.</p>';
   }
 }
 
-searchBox.addEventListener('input', render);
+function compareHTML(list) {
+  const rows = [
+    ['Seller', p => p.seller],
+    ['Place', p => p.place || ''],
+    ['Category', p => p.category],
+    ['Price per kg', p => 'Rs ' + p.unit_price],
+    ['Available', p => availableOf(p) + ' kg'],
+    ['Reserved', p => p.reserved + ' kg'],
+    ['Ready on', p => (isPreorder(p) ? fmtDate(p.ready_on) : 'Now')]
+  ];
+  const head = '<tr><th></th>' + list.map(p => `<th>${esc(p.name)}</th>`).join('') + '</tr>';
+  const body = rows.map(([label, get]) =>
+    `<tr><th>${label}</th>${list.map(p => `<td>${esc(String(get(p)))}</td>`).join('')}</tr>`
+  ).join('');
+  return `<table><thead>${head}</thead><tbody>${body}</tbody></table>`;
+}
+
+[searchBox, minBox, maxBox].forEach(el => el.addEventListener('input', render));
+[sellerSel, availSel].forEach(el => el.addEventListener('change', render));
+
 chips.forEach(chip => {
   chip.addEventListener('click', () => {
     chips.forEach(c => c.classList.remove('active'));
@@ -86,30 +160,46 @@ chips.forEach(chip => {
   });
 });
 
-loadProducts();
-// Header mein login ki halat dikhao
-async function showUser() {
-  const loginLink = document.querySelector('.top nav .login');
-  if (!loginLink) return;
+resetBtn.addEventListener('click', () => {
+  searchBox.value = '';
+  minBox.value = '';
+  maxBox.value = '';
+  sellerSel.value = 'all';
+  availSel.value = 'all';
+  activeCat = 'all';
+  chips.forEach(c => c.classList.toggle('active', c.dataset.cat === 'all'));
+  render();
+});
 
-  try {
-    const res = await fetch('/api/auth/me');
-    if (!res.ok) return; // login nahi hai, "Log in" wesa hi rahe
-
-    const user = await res.json();
-    loginLink.textContent = 'Log out (' + user.name.split(' ')[0] + ')';
-    loginLink.href = '#';
-    loginLink.addEventListener('click', async (e) => {
-      e.preventDefault();
-      await fetch('/api/auth/logout', { method: 'POST' });
-      window.location.reload();
-    });
-  } catch (err) {
-    // server band ho to header jaisa hai waisa rahe
+board.addEventListener('change', (e) => {
+  const box = e.target.closest('input[data-cmp]');
+  if (!box) return;
+  const id = Number(box.dataset.cmp);
+  if (box.checked) {
+    if (compareIds.size >= 3) {
+      box.checked = false;
+      return;
+    }
+    compareIds.add(id);
+  } else {
+    compareIds.delete(id);
   }
-}
+  updateCompareBar();
+});
 
-showUser();
+compareOpen.addEventListener('click', () => {
+  const list = [...compareIds].map(id => products.find(p => p.id === id)).filter(Boolean);
+  compareBody.innerHTML = compareHTML(list);
+  compareDialog.showModal();
+});
+
+compareClear.addEventListener('click', () => {
+  compareIds.clear();
+  render();
+});
+
+compareClose.addEventListener('click', () => compareDialog.close());
+
 const orderBox = document.createElement('dialog');
 orderBox.className = 'order-box';
 orderBox.innerHTML = `
@@ -149,9 +239,8 @@ function updateTotal() {
 
 function openOrderBox(p) {
   orderProduct = p;
-  const available = p.on_hand - p.reserved;
-  const isPreorder = p.ready_on && new Date(p.ready_on) > new Date();
-  obTitle.textContent = (isPreorder ? 'Pre-order ' : 'Order ') + p.name;
+  const available = availableOf(p);
+  obTitle.textContent = (isPreorder(p) ? 'Pre-order ' : 'Order ') + p.name;
   obSub.textContent = available + ' kg available at Rs ' + p.unit_price + ' per kg';
   obQty.max = available;
   obQty.value = 1;
@@ -201,3 +290,5 @@ obForm.addEventListener('submit', async (e) => {
     obSubmit.disabled = false;
   }
 });
+
+loadProducts();
