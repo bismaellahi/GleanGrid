@@ -42,7 +42,7 @@
     .stock-list { border-bottom: 2px solid var(--ink); }
     .item {
       display: grid;
-      grid-template-columns: 1.6fr 0.8fr 1.6fr 1.5fr;
+      grid-template-columns: 1.4fr 0.7fr 1.5fr 2fr;
       gap: 20px;
       align-items: center;
       padding: 16px 0;
@@ -51,22 +51,37 @@
     .item:first-child { border-top: 2px solid var(--ink); }
     .item .pname { font-family: var(--head); font-weight: 700; font-size: 1.2rem; line-height: 1.2; }
     .item .meta { color: var(--muted); font-size: 0.9rem; }
+    .flag {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 2px 8px;
+      border: 1.5px solid var(--chilli);
+      border-radius: 3px;
+      color: var(--chilli);
+      font-family: var(--body);
+      font-weight: 600;
+      font-size: 0.8rem;
+    }
     .numbers { display: flex; gap: 18px; }
     .numbers div { font-size: 0.8rem; color: var(--muted); }
     .numbers strong { display: block; font-family: var(--head); font-size: 1.25rem; color: var(--ink); }
-    .restock { display: flex; gap: 8px; }
-    .restock input {
+    .controls-col { display: flex; flex-direction: column; gap: 8px; }
+    .restock { display: flex; gap: 8px; align-items: center; }
+    .restock input, .restock select {
       font: inherit;
-      width: 90px;
       padding: 8px 10px;
       border: 2px solid var(--ink);
       background: #fff;
       border-radius: 3px;
     }
-    .restock .btn { padding: 8px 14px; justify-self: auto; }
+    .restock input { width: 80px; }
+    .restock select { width: 110px; }
+    .restock .btn { padding: 8px 14px; justify-self: auto; white-space: nowrap; }
+    .btn.writeoff { background: transparent; color: var(--chilli); border-color: var(--chilli); }
     @media (max-width: 900px) {
       .add-form { grid-template-columns: 1fr 1fr; }
       .item { grid-template-columns: 1fr 1fr; gap: 12px; }
+      .controls-col { grid-column: 1 / -1; }
     }
   </style>
 </head>
@@ -84,7 +99,7 @@
   <main>
     <section class="page-head">
       <h1>Your products and stock</h1>
-      <p>Add a new product, or add stock when a fresh harvest arrives. Every change is recorded in the stock history.</p>
+      <p>Add a new product, add stock when a fresh harvest arrives, or write off stock that is damaged, expired or lost. Every change is recorded in the stock history.</p>
     </section>
 
     <form class="add-form" id="add-form">
@@ -134,11 +149,15 @@
 
     function itemHTML(p) {
       const available = p.on_hand - p.reserved;
+      let flag = '';
+      if (available === 0) flag = '<span class="flag">Out of stock</span>';
+      else if (available <= 20) flag = '<span class="flag">Low stock</span>';
       return `
         <article class="item">
           <div>
             <div class="pname">${esc(p.name)}</div>
             <div class="meta">${esc(p.category)}</div>
+            ${flag}
           </div>
           <div><strong>Rs ${p.unit_price}</strong><div class="meta">per kg</div></div>
           <div class="numbers">
@@ -146,9 +165,20 @@
             <div><strong>${p.reserved}</strong>Reserved</div>
             <div><strong>${available}</strong>Available</div>
           </div>
-          <div class="restock">
-            <input type="number" min="1" step="1" placeholder="kg" aria-label="Kilograms to add to ${esc(p.name)}">
-            <button class="btn" data-id="${p.id}">Add stock</button>
+          <div class="controls-col">
+            <div class="restock">
+              <input type="number" min="1" step="1" placeholder="kg" aria-label="Kilograms to add to ${esc(p.name)}">
+              <button class="btn" data-act="restock" data-id="${p.id}">Add stock</button>
+            </div>
+            <div class="restock">
+              <input type="number" min="1" step="1" placeholder="kg" aria-label="Kilograms to write off from ${esc(p.name)}">
+              <select aria-label="Reason for write-off">
+                <option value="Damaged">Damaged</option>
+                <option value="Expired">Expired</option>
+                <option value="Lost">Lost</option>
+              </select>
+              <button class="btn writeoff" data-act="writeoff" data-id="${p.id}">Write off</button>
+            </div>
           </div>
         </article>`;
     }
@@ -210,14 +240,21 @@
     });
 
     list.addEventListener('click', async (e) => {
-      const btn = e.target.closest('button[data-id]');
+      const btn = e.target.closest('button[data-act]');
       if (!btn) return;
-      const input = btn.parentElement.querySelector('input');
+      const row = btn.closest('.restock');
+      const qty = row.querySelector('input').value;
+      let url = '/api/inventory/' + btn.dataset.id + '/restock';
+      let body = { qty };
+      if (btn.dataset.act === 'writeoff') {
+        url = '/api/inventory/' + btn.dataset.id + '/writeoff';
+        body = { qty, reason: row.querySelector('select').value };
+      }
       try {
-        const res = await fetch('/api/inventory/' + btn.dataset.id + '/restock', {
+        const res = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ qty: input.value })
+          body: JSON.stringify(body)
         });
         const data = await res.json();
         showNote(data.message || data.error, res.ok ? 'ok' : 'error');

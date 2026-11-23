@@ -140,4 +140,69 @@ router.post("/:id/restock", requireRole("seller", "admin"), async (req, res) => 
   }
 });
 
+router.post("/:id/writeoff", requireRole("seller", "admin"), async (req, res) => {
+  const productId = Number(req.params.id);
+  const qty = Number(req.body.qty);
+  const reason = req.body.reason;
+  const allowedReasons = ["Damaged", "Expired", "Lost"];
+
+  if (!Number.isInteger(productId) || productId <= 0) {
+    return res.status(400).json({ error: "Invalid product." });
+  }
+  if (!Number.isInteger(qty) || qty <= 0) {
+    return res.status(400).json({ error: "Quantity must be a whole number greater than zero." });
+  }
+  if (!allowedReasons.includes(reason)) {
+    return res.status(400).json({ error: "Please choose a reason." });
+  }
+
+  const conn = await db.getConnection();
+  try {
+    await conn.beginTransaction();
+
+    const [owner] = await conn.query("SELECT seller_id FROM products WHERE id = ?", [productId]);
+    if (owner.length === 0) {
+      await conn.rollback();
+      return res.status(404).json({ error: "This product does not exist." });
+    }
+    if (req.session.user.role !== "admin" && owner[0].seller_id !== req.session.user.id) {
+      await conn.rollback();
+      return res.status(403).json({ error: "This is not your product." });
+    }
+
+    const [stock] = await conn.query(
+      "SELECT qty_on_hand, qty_reserved FROM stock WHERE product_id = ? FOR UPDATE",
+      [productId]
+    );
+    const available = stock[0].qty_on_hand - stock[0].qty_reserved;
+
+    if (qty > available) {
+      await conn.rollback();
+      return res.status(409).json({
+        error: "Only " + available + " kg can be written off. The rest is reserved for orders."
+      });
+    }
+
+    await conn.query(
+      "UPDATE stock SET qty_on_hand = qty_on_hand - ? WHERE product_id = ?",
+      [qty, productId]
+    );
+    await conn.query(
+      `INSERT INTO stock_movements
+         (product_id, change_on_hand, change_reserved, reason, reference_type, reference_id)
+       VALUES (?, ?, 0, ?, 'product', ?)`,
+      [productId, -qty, "Written off: " + reason, productId]
+    );
+
+    await conn.commit();
+    res.json({ message: qty + " kg written off as " + reason.toLowerCase() + "." });
+  } catch (err) {
+    await conn.rollback();
+    console.error(err);
+    res.status(500).json({ error: "Could not write off the stock. Nothing was changed." });
+  } finally {
+    conn.release();
+  }
+});
+
 module.exports = router;
