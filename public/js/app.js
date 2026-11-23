@@ -36,6 +36,10 @@ function fmtDate(value) {
   return new Date(value).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+function shorten(text, max) {
+  return text.length > max ? text.slice(0, max).trim() + '...' : text;
+}
+
 function rowHTML(p) {
   const available = availableOf(p);
   const freePct = p.on_hand ? (available / p.on_hand) * 100 : 0;
@@ -61,11 +65,16 @@ function rowHTML(p) {
   else if (preorder) button = `<button class="btn pre" data-id="${p.id}">Pre-order</button>`;
   else button = `<button class="btn" data-id="${p.id}">Order</button>`;
 
+  const pickupLine = p.pickup ? `<div class="where">${esc(p.pickup)}</div>` : '';
+  const descLine = p.description ? `<div class="where">${esc(shorten(p.description, 90))}</div>` : '';
+
   return `
     <article class="row">
       <div>
         <div class="name">${esc(p.name)}</div>
         <div class="where">${esc(p.seller)}, ${esc(p.place)}</div>
+        ${pickupLine}
+        ${descLine}
         <label class="cmp"><input type="checkbox" data-cmp="${p.id}" ${compareIds.has(p.id) ? 'checked' : ''}> Compare</label>
       </div>
       <div class="bar-col">
@@ -139,7 +148,9 @@ function compareHTML(list) {
     ['Price per kg', p => 'Rs ' + p.unit_price],
     ['Available', p => availableOf(p) + ' kg'],
     ['Reserved', p => p.reserved + ' kg'],
-    ['Ready on', p => (isPreorder(p) ? fmtDate(p.ready_on) : 'Now')]
+    ['Ready on', p => (isPreorder(p) ? fmtDate(p.ready_on) : 'Now')],
+    ['Pickup or delivery', p => p.pickup || 'Not stated'],
+    ['About', p => p.description || 'Not stated']
   ];
   const head = '<tr><th></th>' + list.map(p => `<th>${esc(p.name)}</th>`).join('') + '</tr>';
   const body = rows.map(([label, get]) =>
@@ -241,7 +252,7 @@ function openOrderBox(p) {
   orderProduct = p;
   const available = availableOf(p);
   obTitle.textContent = (isPreorder(p) ? 'Pre-order ' : 'Order ') + p.name;
-  obSub.textContent = available + ' kg available at Rs ' + p.unit_price + ' per kg';
+  obSub.textContent = available + ' kg available at Rs ' + p.unit_price + ' per kg' + (p.pickup ? '. ' + p.pickup + '.' : '');
   obQty.max = available;
   obQty.value = 1;
   obSubmit.disabled = false;

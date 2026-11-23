@@ -4,6 +4,8 @@ const { requireRole } = require("../middleware/auth");
 
 const router = express.Router();
 
+const pickupOptions = ["Pickup only", "Delivery only", "Pickup or delivery"];
+
 router.get("/categories", requireRole("seller", "admin"), async (req, res) => {
   try {
     const [rows] = await db.query("SELECT id, name FROM categories ORDER BY name");
@@ -41,6 +43,8 @@ router.post("/", requireRole("seller", "admin"), async (req, res) => {
   const price = Number(req.body.unit_price);
   const qty = Number(req.body.qty);
   const readyOn = req.body.ready_on || null;
+  const description = (req.body.description || "").trim();
+  const pickup = req.body.pickup || null;
 
   if (!name) {
     return res.status(400).json({ error: "Please enter a product name." });
@@ -57,14 +61,22 @@ router.post("/", requireRole("seller", "admin"), async (req, res) => {
   if (readyOn && !/^\d{4}-\d{2}-\d{2}$/.test(readyOn)) {
     return res.status(400).json({ error: "Ready date is not valid." });
   }
+  if (description.length > 500) {
+    return res.status(400).json({ error: "Description can be at most 500 characters." });
+  }
+  if (pickup && !pickupOptions.includes(pickup)) {
+    return res.status(400).json({ error: "Please choose a pickup or delivery option." });
+  }
 
   const conn = await db.getConnection();
   try {
     await conn.beginTransaction();
 
     const [product] = await conn.query(
-      "INSERT INTO products (seller_id, category_id, name, unit_price, harvest_or_restock_date) VALUES (?, ?, ?, ?, ?)",
-      [req.session.user.id, categoryId, name, price, readyOn]
+      `INSERT INTO products
+         (seller_id, category_id, name, description, unit_price, harvest_or_restock_date, pickup_delivery_info)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [req.session.user.id, categoryId, name, description || null, price, readyOn, pickup]
     );
 
     await conn.query(

@@ -1,12 +1,14 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const db = require('../config/db');
+const db = require("../config/db");
 
-router.get('/', async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     const [rows] = await db.query(`
       SELECT p.id,
              p.name,
+             p.description,
+             p.pickup_delivery_info AS pickup,
              u.name AS seller,
              u.place,
              c.name AS category,
@@ -23,7 +25,7 @@ router.get('/', async (req, res) => {
     res.json(rows);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Could not load products' });
+    res.status(500).json({ error: "Could not load products" });
   }
 });
 
