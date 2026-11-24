@@ -29,7 +29,7 @@
     }
     .order:first-child { border-top: 2px solid var(--ink); }
     .order .id { font-family: var(--head); font-weight: 700; font-size: 1.2rem; }
-    .order .product { font-family: var(--head); font-weight: 700; font-size: 1.15rem; line-height: 1.2; }
+    .order .product { font-family: var(--head); font-weight: 700; font-size: 1.1rem; line-height: 1.25; }
     .order .meta { color: var(--muted); font-size: 0.9rem; }
     .status {
       display: inline-block;
@@ -66,7 +66,7 @@
   <main>
     <section class="page-head">
       <h1>Your orders</h1>
-      <p>You can cancel an order until the seller packs it. Cancelling frees the reserved stock right away.</p>
+      <p>A cart with products from different sellers becomes one order for each seller. You can cancel an order until the seller packs it, and the reserved stock is freed right away.</p>
     </section>
 
     <p class="note" id="note" role="status"></p>
@@ -91,16 +91,15 @@
     function orderHTML(o) {
       const canCancel = o.status === 'pending' || o.status === 'confirmed';
       const date = new Date(o.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+      const lines = o.items.map(i => `<div class="product">${esc(i.name)} <span class="meta">${i.qty} kg</span></div>`).join('');
       return `
         <article class="order">
           <div class="id">#${o.id}</div>
-          <div>
-            <div class="product">${esc(o.name)}</div>
-            <div class="meta">${o.qty} kg</div>
-          </div>
+          <div>${lines}</div>
           <div>
             <strong>Rs ${Number(o.total_amount).toLocaleString('en-PK')}</strong>
             <div class="meta">${date}</div>
+            <div class="meta">${o.fulfilment === 'delivery' ? 'Delivery' : 'Pickup'}</div>
           </div>
           <div><span class="status ${o.status}">${o.status}</span></div>
           <div>${canCancel ? `<button class="btn cancel" data-id="${o.id}">Cancel order</button>` : ''}</div>

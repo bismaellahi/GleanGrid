@@ -16,17 +16,36 @@ router.get("/orders", requireRole("seller", "admin"), async (req, res) => {
   try {
     const isAdmin = req.session.user.role === "admin";
     const [rows] = await db.query(
-      `SELECT o.id, o.status, o.total_amount, o.created_at, o.return_condition, o.refund_note,
+      `SELECT o.id, o.status, o.total_amount, o.fulfilment, o.created_at,
+              o.return_condition, o.refund_note,
               u.name AS buyer, p.name AS product, oi.qty
        FROM orders o
        JOIN users u ON u.id = o.buyer_id
        JOIN order_items oi ON oi.order_id = o.id
        JOIN products p ON p.id = oi.product_id
        WHERE (? = 1 OR p.seller_id = ?)
-       ORDER BY o.id DESC`,
+       ORDER BY o.id DESC, oi.id`,
       [isAdmin ? 1 : 0, req.session.user.id]
     );
-    res.json(rows);
+
+    const byId = new Map();
+    for (const r of rows) {
+      if (!byId.has(r.id)) {
+        byId.set(r.id, {
+          id: r.id,
+          status: r.status,
+          total_amount: r.total_amount,
+          fulfilment: r.fulfilment,
+          created_at: r.created_at,
+          return_condition: r.return_condition,
+          refund_note: r.refund_note,
+          buyer: r.buyer,
+          items: []
+        });
+      }
+      byId.get(r.id).items.push({ product: r.product, qty: r.qty });
+    }
+    res.json([...byId.values()]);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Could not load orders." });

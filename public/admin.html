@@ -31,7 +31,7 @@
     }
     .table-wrap { overflow-x: auto; border-top: 2px solid var(--ink); border-bottom: 2px solid var(--ink); }
     table { width: 100%; border-collapse: collapse; min-width: 560px; }
-    th, td { text-align: left; padding: 11px 14px 11px 0; border-top: 1px solid var(--line); font-size: 0.95rem; }
+    th, td { text-align: left; padding: 11px 14px 11px 0; border-top: 1px solid var(--line); font-size: 0.95rem; vertical-align: top; }
     thead th { border-top: none; color: var(--muted); font-weight: 500; font-size: 0.85rem; }
     td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
     tr.off td { color: var(--muted); }
@@ -142,9 +142,8 @@
 
       const orderRows = data.orders.map(o => `<tr>
           <td>#${o.id}</td>
-          <td>${esc(o.product)}</td>
+          <td>${o.items.map(i => esc(i.product) + ' ' + i.qty + ' kg').join('<br>')}</td>
           <td>${esc(o.buyer)}</td>
-          <td class="num">${o.qty} kg</td>
           <td class="num">Rs ${Number(o.total_amount).toLocaleString('en-PK')}</td>
           <td><span class="status ${o.status}">${o.status}</span></td>
           <td>${fmtDate(o.created_at)}</td>
@@ -208,8 +207,8 @@
         <h2 class="section">Latest orders</h2>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Order</th><th>Product</th><th>Buyer</th><th class="num">Qty</th><th class="num">Total</th><th>Status</th><th>Date</th></tr></thead>
-            <tbody>${orderRows || '<tr><td colspan="7">No orders yet.</td></tr>'}</tbody>
+            <thead><tr><th>Order</th><th>Items</th><th>Buyer</th><th class="num">Total</th><th>Status</th><th>Date</th></tr></thead>
+            <tbody>${orderRows || '<tr><td colspan="6">No orders yet.</td></tr>'}</tbody>
           </table>
         </div>`;
     }

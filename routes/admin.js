@@ -28,16 +28,28 @@ router.get("/overview", requireRole("admin"), async (req, res) => {
       "SELECT id, name, email, role, place, is_active, created_at FROM users ORDER BY id"
     );
 
-    const [orders] = await db.query(
-      `SELECT o.id, o.status, o.total_amount, o.created_at,
-              u.name AS buyer, p.name AS product, oi.qty
+    const [orderRows] = await db.query(
+      `SELECT o.id, o.status, o.total_amount, o.fulfilment, o.created_at, u.name AS buyer
        FROM orders o
        JOIN users u ON u.id = o.buyer_id
-       JOIN order_items oi ON oi.order_id = o.id
-       JOIN products p ON p.id = oi.product_id
        ORDER BY o.id DESC
        LIMIT 20`
     );
+    const orders = orderRows.map((o) => ({ ...o, items: [] }));
+    if (orders.length > 0) {
+      const [itemRows] = await db.query(
+        `SELECT oi.order_id, p.name AS product, oi.qty
+         FROM order_items oi
+         JOIN products p ON p.id = oi.product_id
+         WHERE oi.order_id IN (?)
+         ORDER BY oi.id`,
+        [orders.map((o) => o.id)]
+      );
+      for (const item of itemRows) {
+        const order = orders.find((o) => o.id === item.order_id);
+        if (order) order.items.push({ product: item.product, qty: item.qty });
+      }
+    }
 
     const [categories] = await db.query(
       `SELECT c.id, c.name, COUNT(p.id) AS products

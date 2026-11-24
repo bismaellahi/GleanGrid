@@ -13,15 +13,23 @@ const compareClear = document.getElementById('compare-clear');
 const compareDialog = document.getElementById('compare-dialog');
 const compareBody = document.getElementById('compare-body');
 const compareClose = document.getElementById('compare-close');
+const cartStrip = document.getElementById('cart-strip');
+
+const CART_KEY = 'gleangrid-cart';
 
 let products = [];
 let activeCat = 'all';
 const compareIds = new Set();
+const cart = new Map();
 
 function esc(text) {
   const d = document.createElement('div');
   d.textContent = text;
   return d.innerHTML.replace(/"/g, '&quot;');
+}
+
+function money(n) {
+  return 'Rs ' + Number(n).toLocaleString('en-PK');
 }
 
 function availableOf(p) {
@@ -38,6 +46,53 @@ function fmtDate(value) {
 
 function shorten(text, max) {
   return text.length > max ? text.slice(0, max).trim() + '...' : text;
+}
+
+function loadCart() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CART_KEY) || '[]');
+    saved.forEach(([id, qty]) => {
+      if (Number.isInteger(id) && Number.isInteger(qty) && qty > 0) cart.set(id, qty);
+    });
+  } catch (err) {
+    cart.clear();
+  }
+}
+
+function saveCart() {
+  try {
+    localStorage.setItem(CART_KEY, JSON.stringify([...cart.entries()]));
+  } catch (err) {
+    return;
+  }
+}
+
+function syncCart() {
+  for (const [id, qty] of [...cart.entries()]) {
+    const p = products.find(x => x.id === id);
+    const max = p ? availableOf(p) : 0;
+    if (max <= 0) cart.delete(id);
+    else if (qty > max) cart.set(id, max);
+  }
+  saveCart();
+}
+
+function cartTotal() {
+  let total = 0;
+  for (const [id, qty] of cart) {
+    const p = products.find(x => x.id === id);
+    if (p) total += qty * p.unit_price;
+  }
+  return total;
+}
+
+function renderCartStrip() {
+  const count = cart.size;
+  cartStrip.classList.toggle('show', count > 0);
+  cartStrip.innerHTML = count
+    ? `<span><strong>Cart:</strong> ${count} ${count === 1 ? 'product' : 'products'}, ${money(cartTotal())}</span>
+       <button class="btn" id="cart-open" type="button">View cart</button>`
+    : '';
 }
 
 function fillChips() {
@@ -71,7 +126,7 @@ function rowHTML(p) {
   let button;
   if (available === 0) button = '<button class="btn" disabled>Not available</button>';
   else if (preorder) button = `<button class="btn pre" data-id="${p.id}">Pre-order</button>`;
-  else button = `<button class="btn" data-id="${p.id}">Order</button>`;
+  else button = `<button class="btn" data-id="${p.id}">Add to cart</button>`;
 
   const pickupLine = p.pickup ? `<div class="where">${esc(p.pickup)}</div>` : '';
   const descLine = p.description ? `<div class="where">${esc(shorten(p.description, 90))}</div>` : '';
@@ -141,9 +196,12 @@ async function loadProducts() {
     const res = await fetch('/api/products');
     if (!res.ok) throw new Error('Server returned ' + res.status);
     products = await res.json();
+    syncCart();
     fillChips();
     fillSellers();
     render();
+    renderCartStrip();
+    if (cartBox.open) renderCartBox();
   } catch (err) {
     board.innerHTML = '<p class="empty">Could not load produce. Check that the server is running, then refresh.</p>';
   }
@@ -219,6 +277,8 @@ compareClear.addEventListener('click', () => {
 
 compareClose.addEventListener('click', () => compareDialog.close());
 
+loadCart();
+
 const orderBox = document.createElement('dialog');
 orderBox.className = 'order-box';
 orderBox.innerHTML = `
@@ -230,7 +290,7 @@ orderBox.innerHTML = `
     <p class="total" id="ob-total"></p>
     <p class="msg" id="ob-msg" role="status"></p>
     <div class="actions">
-      <button class="btn" type="submit" id="ob-submit">Place order</button>
+      <button class="btn" type="submit" id="ob-submit">Add to cart</button>
       <button class="btn ghost" type="button" id="ob-cancel">Cancel</button>
     </div>
   </form>`;
@@ -253,14 +313,17 @@ function showOrderMsg(text, type) {
 
 function updateTotal() {
   const qty = Number(obQty.value);
-  obTotal.textContent = qty > 0 ? 'Total: Rs ' + (qty * orderProduct.unit_price).toLocaleString('en-PK') : '';
+  obTotal.textContent = qty > 0 ? 'Total: ' + money(qty * orderProduct.unit_price) : '';
 }
 
 function openOrderBox(p) {
   orderProduct = p;
   const available = availableOf(p);
-  obTitle.textContent = (isPreorder(p) ? 'Pre-order ' : 'Order ') + p.name;
-  obSub.textContent = available + ' kg available at Rs ' + p.unit_price + ' per kg' + (p.pickup ? '. ' + p.pickup + '.' : '');
+  const inCart = cart.get(p.id) || 0;
+  obTitle.textContent = (isPreorder(p) ? 'Pre-order ' : 'Add to cart: ') + p.name;
+  obSub.textContent = available + ' kg available at Rs ' + p.unit_price + ' per kg' +
+    (inCart ? ', ' + inCart + ' kg already in your cart' : '') +
+    (p.pickup ? '. ' + p.pickup + '.' : '');
   obQty.max = available;
   obQty.value = 1;
   obSubmit.disabled = false;
@@ -279,34 +342,144 @@ board.addEventListener('click', (e) => {
 obQty.addEventListener('input', updateTotal);
 document.getElementById('ob-cancel').addEventListener('click', () => orderBox.close());
 
-obForm.addEventListener('submit', async (e) => {
+obForm.addEventListener('submit', (e) => {
   e.preventDefault();
+  const qty = Number(obQty.value);
+  const available = availableOf(orderProduct);
+  const current = cart.get(orderProduct.id) || 0;
+  if (!Number.isInteger(qty) || qty <= 0) {
+    showOrderMsg('Enter a whole number of kg.', 'error');
+    return;
+  }
+  if (current + qty > available) {
+    showOrderMsg('Only ' + available + ' kg is available, and ' + current + ' kg is already in your cart.', 'error');
+    return;
+  }
+  cart.set(orderProduct.id, current + qty);
+  saveCart();
+  renderCartStrip();
   obSubmit.disabled = true;
+  showOrderMsg('Added to your cart.', 'ok');
+  setTimeout(() => orderBox.close(), 700);
+});
+
+const cartBox = document.createElement('dialog');
+cartBox.className = 'cart-box';
+cartBox.innerHTML = `
+  <h2>Your cart</h2>
+  <div id="cb-lines"></div>
+  <p class="ctotal" id="cb-total"></p>
+  <fieldset>
+    <legend>How will you receive it?</legend>
+    <label><input type="radio" name="fulfil" value="pickup" checked> Pickup</label>
+    <label><input type="radio" name="fulfil" value="delivery"> Delivery</label>
+  </fieldset>
+  <p class="cmsg" id="cb-msg" role="status"></p>
+  <div class="cactions">
+    <button class="btn" type="button" id="cb-place">Place order</button>
+    <button class="btn ghost" type="button" id="cb-close">Keep shopping</button>
+  </div>`;
+document.body.appendChild(cartBox);
+
+const cbLines = document.getElementById('cb-lines');
+const cbTotal = document.getElementById('cb-total');
+const cbMsg = document.getElementById('cb-msg');
+const cbPlace = document.getElementById('cb-place');
+
+function showCartMsg(text, type) {
+  cbMsg.textContent = text;
+  cbMsg.className = 'cmsg ' + type;
+}
+
+function renderCartBox() {
+  let html = '';
+  for (const [id, qty] of cart) {
+    const p = products.find(x => x.id === id);
+    if (!p) continue;
+    html += `
+      <div class="cline">
+        <div>
+          <div class="cname">${esc(p.name)}</div>
+          <div class="cmeta">${esc(p.seller)}, ${esc(p.pickup || 'Pickup or delivery')}</div>
+        </div>
+        <div class="csum">${money(qty * p.unit_price)}</div>
+        <div class="cstep">
+          <button type="button" data-act="dec" data-id="${id}" aria-label="One less ${esc(p.name)}">-</button>
+          <span>${qty} kg</span>
+          <button type="button" data-act="inc" data-id="${id}" aria-label="One more ${esc(p.name)}">+</button>
+          <button type="button" class="crm" data-act="rm" data-id="${id}">Remove</button>
+        </div>
+      </div>`;
+  }
+  cbLines.innerHTML = html || '<p class="empty">Your cart is empty.</p>';
+  cbTotal.textContent = cart.size ? 'Total: ' + money(cartTotal()) : '';
+  cbPlace.disabled = cart.size === 0;
+}
+
+function openCart() {
+  showCartMsg('', '');
+  renderCartBox();
+  cartBox.showModal();
+}
+
+cartStrip.addEventListener('click', (e) => {
+  if (e.target.closest('#cart-open')) openCart();
+});
+
+cbLines.addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+  const id = Number(btn.dataset.id);
+  const current = cart.get(id) || 0;
+  const p = products.find(x => x.id === id);
+  if (btn.dataset.act === 'inc' && p && current < availableOf(p)) cart.set(id, current + 1);
+  if (btn.dataset.act === 'dec') {
+    if (current <= 1) cart.delete(id);
+    else cart.set(id, current - 1);
+  }
+  if (btn.dataset.act === 'rm') cart.delete(id);
+  saveCart();
+  renderCartBox();
+  renderCartStrip();
+  showCartMsg('', '');
+});
+
+document.getElementById('cb-close').addEventListener('click', () => cartBox.close());
+
+cbPlace.addEventListener('click', async () => {
+  cbPlace.disabled = true;
+  const fulfilment = cartBox.querySelector('input[name="fulfil"]:checked').value;
+  const items = [...cart.entries()].map(([product_id, qty]) => ({ product_id, qty }));
   try {
     const res = await fetch('/api/orders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ product_id: orderProduct.id, qty: Number(obQty.value) })
+      body: JSON.stringify({ items, fulfilment })
     });
     const data = await res.json();
 
     if (res.status === 401) {
-      showOrderMsg('Please log in as a buyer to place an order.', 'error');
+      showCartMsg('Please log in as a buyer to place an order.', 'error');
       setTimeout(() => { window.location.href = '/login.html'; }, 1200);
       return;
     }
     if (!res.ok) {
-      showOrderMsg(data.error, 'error');
-      obSubmit.disabled = false;
+      showCartMsg(data.error, 'error');
+      await loadProducts();
+      renderCartBox();
       return;
     }
 
-    showOrderMsg('Order placed. Total: Rs ' + data.total, 'ok');
+    cart.clear();
+    saveCart();
+    showCartMsg(data.message, 'ok');
+    renderCartBox();
+    renderCartStrip();
     await loadProducts();
-    setTimeout(() => orderBox.close(), 1500);
+    setTimeout(() => cartBox.close(), 2000);
   } catch (err) {
-    showOrderMsg('Could not reach the server. Please try again.', 'error');
-    obSubmit.disabled = false;
+    showCartMsg('Could not reach the server. Please try again.', 'error');
+    cbPlace.disabled = false;
   }
 });
 

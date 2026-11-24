@@ -35,6 +35,22 @@
       color: var(--muted);
       cursor: pointer;
     }
+    .cart-strip {
+      display: none;
+      position: sticky;
+      top: 0;
+      z-index: 4;
+      background: var(--ink);
+      color: var(--bg);
+      padding: 10px 16px;
+      margin-bottom: 16px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      border-radius: 3px;
+    }
+    .cart-strip.show { display: flex; }
+    .cart-strip .btn { background: var(--mango); color: var(--ink); border-color: var(--mango); padding: 7px 14px; justify-self: auto; }
     .compare-bar {
       display: none;
       position: fixed;
@@ -53,17 +69,18 @@
     .compare-bar .btn { padding: 8px 16px; justify-self: auto; }
     .compare-bar .btn.open { background: var(--mango); color: var(--ink); border-color: var(--mango); }
     .compare-bar .btn.clear { background: transparent; color: var(--bg); border-color: var(--bg); }
-    dialog.compare-box {
+    dialog.compare-box, dialog.cart-box {
       border: 2px solid var(--ink);
       border-radius: 3px;
       padding: 22px;
-      width: min(760px, 94vw);
       background: var(--bg);
       color: var(--ink);
       margin: auto;
     }
-    dialog.compare-box::backdrop { background: rgba(30, 43, 28, 0.55); }
-    .compare-box h2 { font-family: var(--head); font-size: 1.5rem; letter-spacing: -0.5px; margin-bottom: 12px; }
+    dialog.compare-box { width: min(760px, 94vw); }
+    dialog.cart-box { width: min(560px, 94vw); }
+    dialog.compare-box::backdrop, dialog.cart-box::backdrop { background: rgba(30, 43, 28, 0.55); }
+    .compare-box h2, .cart-box h2 { font-family: var(--head); font-size: 1.5rem; letter-spacing: -0.5px; margin-bottom: 12px; }
     .compare-box .scroll { overflow-x: auto; }
     .compare-box table { width: 100%; border-collapse: collapse; min-width: 420px; }
     .compare-box th, .compare-box td { text-align: left; padding: 10px 12px 10px 0; border-top: 1px solid var(--line); }
@@ -71,6 +88,39 @@
     .compare-box tbody th { color: var(--muted); font-weight: 500; font-size: 0.9rem; }
     .compare-box .actions { margin-top: 16px; }
     .compare-box .actions .btn { justify-self: auto; }
+    .cline {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 6px 12px;
+      padding: 12px 0;
+      border-top: 1px dashed var(--line);
+    }
+    .cline .cname { font-weight: 600; }
+    .cline .cmeta { color: var(--muted); font-size: 0.85rem; }
+    .cline .csum { font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+    .cstep { display: flex; align-items: center; gap: 6px; }
+    .cstep button {
+      font: inherit;
+      font-weight: 700;
+      width: 30px;
+      height: 30px;
+      border: 2px solid var(--ink);
+      background: transparent;
+      color: var(--ink);
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    .cstep span { min-width: 56px; text-align: center; font-variant-numeric: tabular-nums; }
+    .cstep .crm { width: auto; padding: 0 10px; margin-left: 6px; border-color: var(--chilli); color: var(--chilli); font-weight: 500; font-size: 0.85rem; }
+    .cart-box .ctotal { border-top: 2px solid var(--ink); margin-top: 6px; padding-top: 12px; font-family: var(--head); font-weight: 700; font-size: 1.5rem; }
+    .cart-box fieldset { border: 2px solid var(--ink); border-radius: 3px; padding: 10px 14px 14px; margin: 14px 0; }
+    .cart-box legend { font-weight: 600; padding: 0 6px; }
+    .cart-box fieldset label { display: flex; gap: 8px; align-items: center; margin-top: 8px; font-weight: 500; }
+    .cart-box .cmsg { font-weight: 500; min-height: 1.5em; }
+    .cart-box .cmsg.error { color: var(--chilli); }
+    .cart-box .cmsg.ok { color: var(--leaf); }
+    .cart-box .cactions { display: flex; gap: 10px; margin-top: 14px; }
+    .cart-box .cactions .btn { justify-self: auto; }
     main { padding-bottom: 90px; }
   </style>
 </head>
@@ -99,12 +149,7 @@
         <span class="sr">Search produce</span>
         <input id="search" type="search" placeholder="Search chillies, dates, onions">
       </label>
-      <div class="chips">
-        <button class="chip active" data-cat="all">All</button>
-        <button class="chip" data-cat="Vegetables">Vegetables</button>
-        <button class="chip" data-cat="Fruit">Fruit</button>
-        <button class="chip" data-cat="Spices">Spices</button>
-      </div>
+      <div class="chips"></div>
     </section>
 
     <section class="filters">
@@ -131,6 +176,7 @@
       <button class="btn" id="f-reset" type="button">Clear filters</button>
     </section>
 
+    <div class="cart-strip" id="cart-strip"></div>
     <section class="board" id="board" aria-live="polite"></section>
   </main>
 
