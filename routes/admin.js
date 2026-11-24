@@ -25,7 +25,7 @@ router.get("/overview", requireRole("admin"), async (req, res) => {
     );
 
     const [users] = await db.query(
-      "SELECT id, name, email, role, place, created_at FROM users ORDER BY id"
+      "SELECT id, name, email, role, place, is_active, created_at FROM users ORDER BY id"
     );
 
     const [orders] = await db.query(
@@ -39,10 +39,88 @@ router.get("/overview", requireRole("admin"), async (req, res) => {
        LIMIT 20`
     );
 
-    res.json({ counts, low_stock: lowStock, users, orders });
+    const [categories] = await db.query(
+      `SELECT c.id, c.name, COUNT(p.id) AS products
+       FROM categories c
+       LEFT JOIN products p ON p.category_id = c.id
+       GROUP BY c.id, c.name
+       ORDER BY c.name`
+    );
+
+    res.json({ counts, low_stock: lowStock, users, orders, categories });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Could not load the admin overview." });
+  }
+});
+
+router.post("/users/:id/active", requireRole("admin"), async (req, res) => {
+  const userId = Number(req.params.id);
+  if (!Number.isInteger(userId) || userId <= 0) {
+    return res.status(400).json({ error: "Invalid user." });
+  }
+  if (typeof req.body.active !== "boolean") {
+    return res.status(400).json({ error: "Please say whether to enable or disable the account." });
+  }
+  if (userId === req.session.user.id) {
+    return res.status(400).json({ error: "You cannot change your own account." });
+  }
+
+  try {
+    const [rows] = await db.query("SELECT role, name FROM users WHERE id = ?", [userId]);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: "This user does not exist." });
+    }
+    if (rows[0].role === "admin") {
+      return res.status(403).json({ error: "Admin accounts cannot be changed here." });
+    }
+
+    await db.query("UPDATE users SET is_active = ? WHERE id = ?", [req.body.active ? 1 : 0, userId]);
+    res.json({ message: rows[0].name + (req.body.active ? " was enabled." : " was disabled.") });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not update the account." });
+  }
+});
+
+router.post("/categories", requireRole("admin"), async (req, res) => {
+  const name = String(req.body.name || "").trim();
+  if (!name || name.length > 60) {
+    return res.status(400).json({ error: "Category name must be 1 to 60 characters." });
+  }
+  try {
+    await db.query("INSERT INTO categories (name) VALUES (?)", [name]);
+    res.json({ message: name + " was added." });
+  } catch (err) {
+    if (err.code === "ER_DUP_ENTRY") {
+      return res.status(409).json({ error: "This category already exists." });
+    }
+    console.error(err);
+    res.status(500).json({ error: "Could not add the category." });
+  }
+});
+
+router.post("/categories/:id/rename", requireRole("admin"), async (req, res) => {
+  const categoryId = Number(req.params.id);
+  const name = String(req.body.name || "").trim();
+  if (!Number.isInteger(categoryId) || categoryId <= 0) {
+    return res.status(400).json({ error: "Invalid category." });
+  }
+  if (!name || name.length > 60) {
+    return res.status(400).json({ error: "Category name must be 1 to 60 characters." });
+  }
+  try {
+    const [result] = await db.query("UPDATE categories SET name = ? WHERE id = ?", [name, categoryId]);
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: "This category does not exist." });
+    }
+    res.json({ message: "Category renamed to " + name + "." });
+  } catch (err) {
+    if (err.code === "ER_DUP_ENTRY") {
+      return res.status(409).json({ error: "Another category already has this name." });
+    }
+    console.error(err);
+    res.status(500).json({ error: "Could not rename the category." });
   }
 });
 

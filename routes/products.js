@@ -20,6 +20,7 @@ router.get("/", async (req, res) => {
       JOIN users u ON u.id = p.seller_id
       JOIN categories c ON c.id = p.category_id
       JOIN stock s ON s.product_id = p.id
+      WHERE u.is_active = 1
       ORDER BY p.name
     `);
     res.json(rows);

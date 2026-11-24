@@ -50,6 +50,31 @@
     .note { margin: 14px 0; font-weight: 500; min-height: 1.5em; }
     .note.error { color: var(--chilli); }
     .note.ok { color: var(--leaf); }
+    dialog.return-box {
+      border: 2px solid var(--ink);
+      border-radius: 3px;
+      padding: 24px;
+      width: min(420px, 92vw);
+      background: var(--bg);
+      color: var(--ink);
+      margin: auto;
+    }
+    dialog.return-box::backdrop { background: rgba(30, 43, 28, 0.55); }
+    .return-box h2 { font-family: var(--head); font-size: 1.5rem; letter-spacing: -0.5px; margin-bottom: 14px; }
+    .return-box fieldset { border: 2px solid var(--ink); border-radius: 3px; padding: 10px 14px 14px; margin-bottom: 14px; }
+    .return-box legend { font-weight: 600; padding: 0 6px; }
+    .return-box fieldset label { display: flex; gap: 8px; align-items: center; margin-top: 8px; font-weight: 500; }
+    .return-box label[for="r-note"] { display: block; font-weight: 500; margin-bottom: 5px; }
+    .return-box input[type="text"] {
+      font: inherit;
+      width: 100%;
+      padding: 10px 12px;
+      border: 2px solid var(--ink);
+      background: #fff;
+      border-radius: 3px;
+    }
+    .return-box .row-actions { display: flex; gap: 10px; margin-top: 18px; }
+    .return-box .btn { justify-self: auto; }
     @media (max-width: 760px) {
       .order { grid-template-columns: 1fr 1fr; gap: 12px; }
       .order .actions { grid-column: 1 / -1; }
@@ -69,22 +94,42 @@
   <main>
     <section class="page-head">
       <h1>Orders for your produce</h1>
-      <p>Confirm, pack and dispatch each order. Stock updates by itself at every step.</p>
+      <p>Confirm, pack and dispatch each order. Stock updates by itself at every step. For a return, check the produce first: only good produce goes back into stock.</p>
     </section>
 
     <p class="note" id="note" role="status"></p>
     <section class="orders" id="orders" aria-live="polite"></section>
   </main>
 
+  <dialog class="return-box" id="return-dialog">
+    <h2>Mark order returned</h2>
+    <form id="return-form">
+      <fieldset>
+        <legend>Condition of the returned produce</legend>
+        <label><input type="radio" name="cond" value="good" checked> Good: add it back to stock</label>
+        <label><input type="radio" name="cond" value="damaged"> Damaged: do not add it back</label>
+      </fieldset>
+      <label for="r-note">Refund note (optional)</label>
+      <input id="r-note" type="text" maxlength="255" placeholder="Refunded Rs 450 in cash">
+      <div class="row-actions">
+        <button class="btn" type="submit">Confirm return</button>
+        <button class="btn ghost" type="button" id="r-cancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
   <script>
     const list = document.getElementById('orders');
     const note = document.getElementById('note');
+    const returnDialog = document.getElementById('return-dialog');
+    const returnForm = document.getElementById('return-form');
+    let returnId = null;
 
     const actionsByStatus = {
       pending: [['confirmed', 'Confirm'], ['rejected', 'Reject']],
       confirmed: [['packed', 'Mark packed'], ['rejected', 'Reject']],
       packed: [['dispatched', 'Dispatch'], ['collected', 'Mark collected'], ['rejected', 'Reject']],
-            dispatched: [['collected', 'Mark collected']],
+      dispatched: [['collected', 'Mark collected']],
       collected: [['returned', 'Mark returned']]
     };
 
@@ -99,6 +144,13 @@
       note.className = 'note ' + type;
     }
 
+    function returnLine(o) {
+      if (o.status !== 'returned') return '';
+      const cond = o.return_condition === 'good' ? 'Returned in good condition, restocked' : 'Returned damaged, not restocked';
+      const refund = o.refund_note ? '. Refund: ' + esc(o.refund_note) : '';
+      return `<div class="meta">${cond}${refund}</div>`;
+    }
+
     function orderHTML(o) {
       const buttons = (actionsByStatus[o.status] || []).map(([status, label]) =>
         `<button class="btn ${status === 'rejected' ? 'reject' : ''}" data-id="${o.id}" data-status="${status}">${label}</button>`
@@ -110,6 +162,7 @@
           <div>
             <div class="product">${esc(o.product)}</div>
             <div class="meta">${o.qty} kg for ${esc(o.buyer)}</div>
+            ${returnLine(o)}
           </div>
           <div>
             <strong>Rs ${Number(o.total_amount).toLocaleString('en-PK')}</strong>
@@ -136,23 +189,46 @@
       }
     }
 
-    list.addEventListener('click', async (e) => {
-      const btn = e.target.closest('button[data-id]');
-      if (!btn) return;
-      btn.disabled = true;
+    async function sendStatus(id, status, extra) {
       try {
-        const res = await fetch('/api/seller/orders/' + btn.dataset.id + '/status', {
+        const res = await fetch('/api/seller/orders/' + id + '/status', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: btn.dataset.status })
+          body: JSON.stringify(Object.assign({ status }, extra))
         });
         const data = await res.json();
         showNote(data.message || data.error, res.ok ? 'ok' : 'error');
       } catch (err) {
         showNote('Could not reach the server. Please try again.', 'error');
       }
+    }
+
+    list.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-id]');
+      if (!btn) return;
+      if (btn.dataset.status === 'returned') {
+        returnId = btn.dataset.id;
+        returnForm.reset();
+        returnDialog.showModal();
+        return;
+      }
+      btn.disabled = true;
+      await sendStatus(btn.dataset.id, btn.dataset.status, {});
       loadOrders();
     });
+
+    returnForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const condition = returnForm.querySelector('input[name="cond"]:checked').value;
+      returnDialog.close();
+      await sendStatus(returnId, 'returned', {
+        condition,
+        refund_note: document.getElementById('r-note').value
+      });
+      loadOrders();
+    });
+
+    document.getElementById('r-cancel').addEventListener('click', () => returnDialog.close());
 
     loadOrders();
   </script>

@@ -34,6 +34,16 @@
     th, td { text-align: left; padding: 11px 14px 11px 0; border-top: 1px solid var(--line); font-size: 0.95rem; }
     thead th { border-top: none; color: var(--muted); font-weight: 500; font-size: 0.85rem; }
     td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    tr.off td { color: var(--muted); }
+    td input[type="text"] {
+      font: inherit;
+      padding: 6px 10px;
+      border: 2px solid var(--ink);
+      background: #fff;
+      border-radius: 3px;
+      width: 100%;
+      max-width: 260px;
+    }
     .status {
       display: inline-block;
       padding: 2px 9px;
@@ -48,6 +58,32 @@
     .status.collected { background: var(--leaf); color: #fff; border-color: var(--leaf); }
     .status.rejected, .status.cancelled, .status.returned { color: var(--chilli); border-color: var(--chilli); }
     .low { color: var(--chilli); font-weight: 600; }
+    .mini {
+      font: inherit;
+      font-weight: 600;
+      font-size: 0.85rem;
+      padding: 5px 12px;
+      border: 2px solid var(--ink);
+      background: transparent;
+      color: var(--ink);
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    .mini.danger { color: var(--chilli); border-color: var(--chilli); }
+    .inline-form { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+    .inline-form input {
+      font: inherit;
+      padding: 9px 12px;
+      border: 2px solid var(--ink);
+      background: #fff;
+      border-radius: 3px;
+      width: 260px;
+      max-width: 100%;
+    }
+    .inline-form .btn { justify-self: auto; }
+    .note { margin: 14px 0 0; font-weight: 500; min-height: 1.5em; }
+    .note.error { color: var(--chilli); }
+    .note.ok { color: var(--leaf); }
     @media (max-width: 760px) {
       .counts { grid-template-columns: 1fr 1fr; }
       .counts div:nth-child(3) { border-left: none; padding-left: 0; }
@@ -67,19 +103,26 @@
   <main>
     <section class="page-head">
       <h1>Admin overview</h1>
-      <p>Everything on the platform in one place: users, low stock and the latest orders.</p>
+      <p>Users, categories, low stock and the latest orders in one place.</p>
     </section>
 
+    <p class="note" id="note" role="status"></p>
     <div id="content" aria-live="polite"></div>
   </main>
 
   <script>
     const content = document.getElementById('content');
+    const note = document.getElementById('note');
 
     function esc(text) {
       const d = document.createElement('div');
       d.textContent = text;
-      return d.innerHTML;
+      return d.innerHTML.replace(/"/g, '&quot;');
+    }
+
+    function showNote(text, type) {
+      note.textContent = text;
+      note.className = 'note ' + type;
     }
 
     function fmtDate(value) {
@@ -88,16 +131,14 @@
 
     function render(data) {
       const c = data.counts;
-      const lowRows = data.low_stock.map(p => {
-        const available = p.on_hand - p.reserved;
-        return `<tr>
+
+      const lowRows = data.low_stock.map(p => `<tr>
           <td>${esc(p.name)}</td>
           <td>${esc(p.seller)}</td>
           <td class="num">${p.on_hand}</td>
           <td class="num">${p.reserved}</td>
-          <td class="num low">${available}</td>
-        </tr>`;
-      }).join('');
+          <td class="num low">${p.on_hand - p.reserved}</td>
+        </tr>`).join('');
 
       const orderRows = data.orders.map(o => `<tr>
           <td>#${o.id}</td>
@@ -109,12 +150,23 @@
           <td>${fmtDate(o.created_at)}</td>
         </tr>`).join('');
 
-      const userRows = data.users.map(u => `<tr>
+      const userRows = data.users.map(u => {
+        const toggle = u.role === 'admin' ? '' :
+          `<button class="mini ${u.is_active ? 'danger' : ''}" data-user="${u.id}" data-active="${u.is_active ? 0 : 1}">${u.is_active ? 'Disable' : 'Enable'}</button>`;
+        return `<tr class="${u.is_active ? '' : 'off'}">
           <td>${esc(u.name)}</td>
           <td>${esc(u.email)}</td>
           <td style="text-transform:capitalize">${u.role}</td>
           <td>${esc(u.place || '')}</td>
-          <td>${fmtDate(u.created_at)}</td>
+          <td>${u.is_active ? 'Active' : 'Disabled'}</td>
+          <td>${toggle}</td>
+        </tr>`;
+      }).join('');
+
+      const catRows = data.categories.map(cat => `<tr>
+          <td><input type="text" value="${esc(cat.name)}" maxlength="60" aria-label="Category name"></td>
+          <td class="num">${cat.products}</td>
+          <td><button class="mini" data-cat="${cat.id}">Save name</button></td>
         </tr>`).join('');
 
       content.innerHTML = `
@@ -123,6 +175,26 @@
           <div><strong>${c.products}</strong><span>Products</span></div>
           <div><strong>${c.orders}</strong><span>Online orders</span></div>
           <div><strong>${c.pos_sales}</strong><span>Counter sales</span></div>
+        </div>
+
+        <h2 class="section">Users</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Place</th><th>Status</th><th></th></tr></thead>
+            <tbody>${userRows}</tbody>
+          </table>
+        </div>
+
+        <h2 class="section">Categories</h2>
+        <form class="inline-form" id="cat-form">
+          <input id="cat-name" type="text" maxlength="60" placeholder="New category, for example Grains" required>
+          <button class="btn" type="submit">Add category</button>
+        </form>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th class="num">Products</th><th></th></tr></thead>
+            <tbody>${catRows}</tbody>
+          </table>
         </div>
 
         <h2 class="section">Low stock (20 kg or less available)</h2>
@@ -139,14 +211,6 @@
             <thead><tr><th>Order</th><th>Product</th><th>Buyer</th><th class="num">Qty</th><th class="num">Total</th><th>Status</th><th>Date</th></tr></thead>
             <tbody>${orderRows || '<tr><td colspan="7">No orders yet.</td></tr>'}</tbody>
           </table>
-        </div>
-
-        <h2 class="section">Users</h2>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Place</th><th>Joined</th></tr></thead>
-            <tbody>${userRows}</tbody>
-          </table>
         </div>`;
     }
 
@@ -162,6 +226,44 @@
         content.innerHTML = '<p class="empty">Could not load the overview. Check that the server is running, then refresh.</p>';
       }
     }
+
+    async function post(url, body) {
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        showNote(data.message || data.error, res.ok ? 'ok' : 'error');
+        return res.ok;
+      } catch (err) {
+        showNote('Could not reach the server. Please try again.', 'error');
+        return false;
+      }
+    }
+
+    content.addEventListener('click', async (e) => {
+      const userBtn = e.target.closest('button[data-user]');
+      if (userBtn) {
+        await post('/api/admin/users/' + userBtn.dataset.user + '/active', { active: userBtn.dataset.active === '1' });
+        load();
+        return;
+      }
+      const catBtn = e.target.closest('button[data-cat]');
+      if (catBtn) {
+        const name = catBtn.closest('tr').querySelector('input').value;
+        await post('/api/admin/categories/' + catBtn.dataset.cat + '/rename', { name });
+        load();
+      }
+    });
+
+    content.addEventListener('submit', async (e) => {
+      if (e.target.id !== 'cat-form') return;
+      e.preventDefault();
+      const ok = await post('/api/admin/categories', { name: document.getElementById('cat-name').value });
+      if (ok) load();
+    });
 
     load();
   </script>

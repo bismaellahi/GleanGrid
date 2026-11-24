@@ -1,6 +1,6 @@
 const board = document.getElementById('board');
 const searchBox = document.getElementById('search');
-const chips = document.querySelectorAll('.chip');
+const chipsBox = document.querySelector('.chips');
 const sellerSel = document.getElementById('f-seller');
 const minBox = document.getElementById('f-min');
 const maxBox = document.getElementById('f-max');
@@ -38,6 +38,14 @@ function fmtDate(value) {
 
 function shorten(text, max) {
   return text.length > max ? text.slice(0, max).trim() + '...' : text;
+}
+
+function fillChips() {
+  const cats = [...new Set(products.map(p => p.category))].sort();
+  if (activeCat !== 'all' && !cats.includes(activeCat)) activeCat = 'all';
+  chipsBox.innerHTML = ['all', ...cats].map(c =>
+    `<button class="chip ${c === activeCat ? 'active' : ''}" data-cat="${esc(c)}">${c === 'all' ? 'All' : esc(c)}</button>`
+  ).join('');
 }
 
 function rowHTML(p) {
@@ -133,6 +141,7 @@ async function loadProducts() {
     const res = await fetch('/api/products');
     if (!res.ok) throw new Error('Server returned ' + res.status);
     products = await res.json();
+    fillChips();
     fillSellers();
     render();
   } catch (err) {
@@ -162,13 +171,12 @@ function compareHTML(list) {
 [searchBox, minBox, maxBox].forEach(el => el.addEventListener('input', render));
 [sellerSel, availSel].forEach(el => el.addEventListener('change', render));
 
-chips.forEach(chip => {
-  chip.addEventListener('click', () => {
-    chips.forEach(c => c.classList.remove('active'));
-    chip.classList.add('active');
-    activeCat = chip.dataset.cat;
-    render();
-  });
+chipsBox.addEventListener('click', (e) => {
+  const chip = e.target.closest('.chip');
+  if (!chip) return;
+  activeCat = chip.dataset.cat;
+  fillChips();
+  render();
 });
 
 resetBtn.addEventListener('click', () => {
@@ -178,7 +186,7 @@ resetBtn.addEventListener('click', () => {
   sellerSel.value = 'all';
   availSel.value = 'all';
   activeCat = 'all';
-  chips.forEach(c => c.classList.toggle('active', c.dataset.cat === 'all'));
+  fillChips();
   render();
 });
 

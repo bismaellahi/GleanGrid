@@ -16,7 +16,7 @@ router.get("/orders", requireRole("seller", "admin"), async (req, res) => {
   try {
     const isAdmin = req.session.user.role === "admin";
     const [rows] = await db.query(
-      `SELECT o.id, o.status, o.total_amount, o.created_at,
+      `SELECT o.id, o.status, o.total_amount, o.created_at, o.return_condition, o.refund_note,
               u.name AS buyer, p.name AS product, oi.qty
        FROM orders o
        JOIN users u ON u.id = o.buyer_id
@@ -36,10 +36,20 @@ router.get("/orders", requireRole("seller", "admin"), async (req, res) => {
 router.post("/orders/:id/status", requireRole("seller", "admin"), async (req, res) => {
   const orderId = Number(req.params.id);
   const newStatus = req.body.status;
+  const condition = req.body.condition;
+  const refundNote = String(req.body.refund_note || "").trim();
   const isAdmin = req.session.user.role === "admin";
 
   if (!Number.isInteger(orderId) || orderId <= 0) {
     return res.status(400).json({ error: "Invalid order." });
+  }
+  if (newStatus === "returned") {
+    if (!["good", "damaged"].includes(condition)) {
+      return res.status(400).json({ error: "Please say whether the returned produce is in good condition." });
+    }
+    if (refundNote.length > 255) {
+      return res.status(400).json({ error: "The refund note can be at most 255 characters." });
+    }
   }
 
   const conn = await db.getConnection();
@@ -109,20 +119,37 @@ router.post("/orders/:id/status", requireRole("seller", "admin"), async (req, re
       }
 
       if (newStatus === "returned") {
-        await conn.query(
-          "UPDATE stock SET qty_on_hand = qty_on_hand + ? WHERE product_id = ?",
-          [item.qty, item.product_id]
-        );
-        await conn.query(
-          `INSERT INTO stock_movements
-             (product_id, change_on_hand, change_reserved, reason, reference_type, reference_id)
-           VALUES (?, ?, 0, 'Returned: stock restored', 'order', ?)`,
-          [item.product_id, item.qty, orderId]
-        );
+        if (condition === "good") {
+          await conn.query(
+            "UPDATE stock SET qty_on_hand = qty_on_hand + ? WHERE product_id = ?",
+            [item.qty, item.product_id]
+          );
+          await conn.query(
+            `INSERT INTO stock_movements
+               (product_id, change_on_hand, change_reserved, reason, reference_type, reference_id)
+             VALUES (?, ?, 0, 'Returned: good condition, restocked', 'order', ?)`,
+            [item.product_id, item.qty, orderId]
+          );
+        } else {
+          await conn.query(
+            `INSERT INTO stock_movements
+               (product_id, change_on_hand, change_reserved, reason, reference_type, reference_id)
+             VALUES (?, 0, 0, 'Returned: damaged, not restocked', 'order', ?)`,
+            [item.product_id, orderId]
+          );
+        }
       }
     }
 
-    await conn.query("UPDATE orders SET status = ? WHERE id = ?", [newStatus, orderId]);
+    if (newStatus === "returned") {
+      await conn.query(
+        "UPDATE orders SET status = ?, return_condition = ?, refund_note = ? WHERE id = ?",
+        [newStatus, condition, refundNote || null, orderId]
+      );
+    } else {
+      await conn.query("UPDATE orders SET status = ? WHERE id = ?", [newStatus, orderId]);
+    }
+
     await conn.commit();
     res.json({ message: "Order is now " + newStatus + "." });
   } catch (err) {

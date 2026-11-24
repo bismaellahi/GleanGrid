@@ -4,7 +4,6 @@ const db = require("../config/db");
 
 const router = express.Router();
 
-// Register: sirf buyer ya seller. Admin account hum khud database mein banate hain.
 router.post("/register", async (req, res) => {
   const { name, password, role, place } = req.body;
   const email = (req.body.email || "").trim().toLowerCase();
@@ -38,7 +37,6 @@ router.post("/register", async (req, res) => {
   }
 });
 
-// Login
 router.post("/login", async (req, res) => {
   const email = (req.body.email || "").trim().toLowerCase();
   const password = req.body.password || "";
@@ -49,7 +47,7 @@ router.post("/login", async (req, res) => {
 
   try {
     const [rows] = await db.query(
-      "SELECT id, name, role, password_hash FROM users WHERE email = ?",
+      "SELECT id, name, role, password_hash, is_active FROM users WHERE email = ?",
       [email]
     );
     const user = rows[0];
@@ -57,6 +55,9 @@ router.post("/login", async (req, res) => {
 
     if (!ok) {
       return res.status(401).json({ error: "Email or password is wrong." });
+    }
+    if (!user.is_active) {
+      return res.status(403).json({ error: "This account has been disabled. Please contact the admin." });
     }
 
     req.session.user = { id: user.id, name: user.name, role: user.role };
@@ -67,19 +68,27 @@ router.post("/login", async (req, res) => {
   }
 });
 
-// Logout
 router.post("/logout", (req, res) => {
   req.session.destroy(() => {
     res.json({ message: "Logged out." });
   });
 });
 
-// Kaun login hai
-router.get("/me", (req, res) => {
+router.get("/me", async (req, res) => {
   if (!req.session.user) {
     return res.status(401).json({ error: "Not logged in." });
   }
-  res.json(req.session.user);
+  try {
+    const [rows] = await db.query("SELECT is_active FROM users WHERE id = ?", [req.session.user.id]);
+    if (rows.length === 0 || !rows[0].is_active) {
+      req.session.destroy(() => {});
+      return res.status(401).json({ error: "Not logged in." });
+    }
+    res.json(req.session.user);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong." });
+  }
 });
 
 module.exports = router;
